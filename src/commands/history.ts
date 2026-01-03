@@ -45,7 +45,8 @@ export function createHistoryCommand(): Command {
       const availableProducts = products
         .filter(p => p.available)
         .map(p => ({
-          sku: `${p.source}-${p.sku}`,
+          fullSku: `${p.source}-${p.sku}`,
+          rawSku: p.sku.toLowerCase(),
           name: p.name,
           pricePerTb: parseFloat(p.current_price_per_tb),
           capacityTb: parseFloat(p.capacity_tb),
@@ -54,14 +55,15 @@ export function createHistoryCommand(): Command {
 
       const filtered = focused
         ? availableProducts.filter(p => 
-            p.sku.toLowerCase().includes(focused) || 
+            p.fullSku.toLowerCase().includes(focused) || 
+            p.rawSku.includes(focused) ||
             p.name.toLowerCase().includes(focused)
           )
         : availableProducts;
 
       const choices = filtered.slice(0, 25).map(p => ({
         name: `$${p.pricePerTb.toFixed(2)}/TB - ${p.name.slice(0, 60)} (${p.capacityTb}TB)`,
-        value: p.sku,
+        value: p.fullSku,
       }));
 
       await interaction.respond(choices);
