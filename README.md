@@ -296,6 +296,7 @@ Full price history is fetched from the OnlyDrives API when needed.
 ### Bot Not Sending Alerts
 - Verify `ALERT_CHANNEL_ID` is correct
 - Ensure bot has `Send Messages` and `Embed Links` permissions in that channel
+- If using per-alert channels via `/config channel`, ensure the bot has permissions in **all** configured channels
 - Check logs for errors
 
 ### Database Errors

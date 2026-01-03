@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { REST, Routes } from 'discord.js';
 import { loadConfig } from './config.js';
 import { Database } from './services/database.js';
