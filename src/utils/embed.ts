@@ -54,8 +54,7 @@ export function createAlertEmbed(alert: AlertEvent): EmbedBuilder {
   }
 
   embed.addFields(
-    { name: 'Capacity', value: `${product.capacity_tb} TB`, inline: true },
-    { name: 'Source', value: product.source, inline: true }
+    { name: 'Capacity', value: `${product.capacity_tb} TB`, inline: true }
   );
 
   embed.setURL(product.url);
