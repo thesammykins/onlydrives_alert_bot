@@ -1,0 +1,53 @@
+[
+  {
+    "id": "51824083435793",
+    "sku": "ST22000NM000C-R",
+    "name": "ST22000NM000C Seagate Exos 22TB 3.5\" 512MB Internal CMR 7.2K 6Gb SATA Hard Drive",
+    "type": "HDD",
+    "condition": "Recertified",
+    "capacity_tb": "22.00",
+    "url": "https://east-digital.myshopify.com/products/st22000nm000c-seagate-exos-22tb-3-5-512mb-internal-cmr-7-2k-6gb-sata-hard-drive?_pos=10&_fid=b58094a32&_ss=c",
+    "image_url": "https://east-digital.myshopify.com/cdn/shop/files/10_0033e146-8e15-468f-875a-e65452958eaf.jpg?v=1752671395",
+    "available": true,
+    "current_price_total": "483.00",
+    "current_price_per_tb": "21.95",
+    "last_seen_at": "2026-01-02T22:40:00.675Z",
+    "first_seen_at": "2025-11-10T05:55:37.769Z",
+    "updated_at": "2026-01-02T22:40:00.675Z",
+    "source": "east-digital"
+  },
+  {
+    "id": "51898390610193",
+    "sku": "ST28000NM000C-R",
+    "name": "ST28000NM000C Seagate Exos 28TB 3.5\" SATA 7200RPM 512MB Enterprise Hard Drive",
+    "type": "HDD",
+    "condition": "Recertified",
+    "capacity_tb": "28.00",
+    "url": "https://east-digital.myshopify.com/products/st28000nm000c-seagate-exos-28tb-3-5-sata-7200rpm-256mb-enterprise-hard-drive-1?_pos=7&_fid=b58094a32&_ss=c",
+    "image_url": "https://east-digital.myshopify.com/cdn/shop/files/10_3dd9daeb-9556-4815-a5aa-ae7f19de7f76.jpg?v=1754994912",
+    "available": true,
+    "current_price_total": "627.00",
+    "current_price_per_tb": "22.39",
+    "last_seen_at": "2026-01-02T22:40:00.675Z",
+    "first_seen_at": "2025-11-10T05:55:37.769Z",
+    "updated_at": "2026-01-02T22:40:00.675Z",
+    "source": "east-digital"
+  },
+  {
+    "id": "51898392150289",
+    "sku": "ST24000NM000C-R",
+    "name": "ST24000NM000C Seagate Exos 24TB 3.5\" SATA 7200RPM 256MB Enterprise Hard Drive",
+    "type": "HDD",
+    "condition": "Recertified",
+    "capacity_tb": "24.00",
+    "url": "https://east-digital.myshopify.com/products/st24000nm000c-seagate-exos-24tb-3-5-sata-7200rpm-256mb-enterprise-hard-drive-1?_pos=6&_fid=b58094a32&_ss=c",
+    "image_url": "https://east-digital.myshopify.com/cdn/shop/files/10_25a7235a-9326-4952-aaf7-606100aa1e77.jpg?v=1754995148",
+    "available": true,
+    "current_price_total": "538.00",
+    "current_price_per_tb": "22.42",
+    "last_seen_at": "2026-01-02T22:40:00.675Z",
+    "first_seen_at": "2025-11-10T05:55:37.769Z",
+    "updated_at": "2026-01-02T22:40:00.675Z",
+    "source": "east-digital"
+  }
+]

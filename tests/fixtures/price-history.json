@@ -1,0 +1,52 @@
+[
+  {
+    "recorded_at": "2026-01-02T22:40:00.675Z",
+    "price_total": "483.00",
+    "price_per_tb": "21.95"
+  },
+  {
+    "recorded_at": "2026-01-02T19:40:01.029Z",
+    "price_total": "485.00",
+    "price_per_tb": "22.05"
+  },
+  {
+    "recorded_at": "2026-01-02T13:40:01.262Z",
+    "price_total": "484.00",
+    "price_per_tb": "22.00"
+  },
+  {
+    "recorded_at": "2026-01-02T04:40:01.228Z",
+    "price_total": "483.00",
+    "price_per_tb": "21.95"
+  },
+  {
+    "recorded_at": "2026-01-02T01:40:01.074Z",
+    "price_total": "484.00",
+    "price_per_tb": "22.00"
+  },
+  {
+    "recorded_at": "2025-12-31T16:40:00.688Z",
+    "price_total": "485.00",
+    "price_per_tb": "22.05"
+  },
+  {
+    "recorded_at": "2025-12-31T07:40:00.973Z",
+    "price_total": "484.00",
+    "price_per_tb": "22.00"
+  },
+  {
+    "recorded_at": "2025-12-31T01:40:01.279Z",
+    "price_total": "483.00",
+    "price_per_tb": "21.95"
+  },
+  {
+    "recorded_at": "2025-12-30T22:40:00.860Z",
+    "price_total": "484.00",
+    "price_per_tb": "22.00"
+  },
+  {
+    "recorded_at": "2025-12-30T10:40:01.209Z",
+    "price_total": "483.00",
+    "price_per_tb": "21.95"
+  }
+]
