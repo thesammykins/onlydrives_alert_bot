@@ -152,4 +152,80 @@ describe('Database', () => {
       expect(allStates).toHaveLength(2);
     });
   });
+
+  describe('bot configuration', () => {
+    it('gets and sets config values', () => {
+      expect(db.getConfig('test_key')).toBeNull();
+
+      db.setConfig('test_key', 'test_value');
+      expect(db.getConfig('test_key')).toBe('test_value');
+
+      db.setConfig('test_key', 'new_value');
+      expect(db.getConfig('test_key')).toBe('new_value');
+    });
+
+    it('deletes config values', () => {
+      db.setConfig('delete_me', 'value');
+      expect(db.getConfig('delete_me')).toBe('value');
+
+      db.deleteConfig('delete_me');
+      expect(db.getConfig('delete_me')).toBeNull();
+    });
+
+    it('gets all config as object', () => {
+      db.setConfig('key1', 'value1');
+      db.setConfig('key2', 'value2');
+
+      const all = db.getAllConfig();
+      expect(all['key1']).toBe('value1');
+      expect(all['key2']).toBe('value2');
+    });
+  });
+
+  describe('initial sync detection', () => {
+    it('tracks initial sync state', () => {
+      expect(db.isInitialSyncComplete()).toBe(false);
+
+      db.markInitialSyncComplete();
+      expect(db.isInitialSyncComplete()).toBe(true);
+    });
+  });
+
+  describe('getBotSettings', () => {
+    it('returns defaults when no config set', () => {
+      const settings = db.getBotSettings();
+
+      expect(settings.channelPriceDrop).toBeNull();
+      expect(settings.alertPriceDropEnabled).toBe(true);
+      expect(settings.priceDropThreshold).toBeNull();
+      expect(settings.pollIntervalMs).toBeNull();
+    });
+
+    it('returns configured values', () => {
+      db.setConfig('channel_price_drop', '123456');
+      db.setConfig('alert_price_drop_enabled', 'false');
+      db.setConfig('price_drop_threshold', '0.08');
+      db.setConfig('poll_interval_ms', '60000');
+
+      const settings = db.getBotSettings();
+
+      expect(settings.channelPriceDrop).toBe('123456');
+      expect(settings.alertPriceDropEnabled).toBe(false);
+      expect(settings.priceDropThreshold).toBe(0.08);
+      expect(settings.pollIntervalMs).toBe(60000);
+    });
+  });
+
+  describe('setBotSetting', () => {
+    it('sets values', () => {
+      db.setBotSetting('channel_new_product', '999');
+      expect(db.getConfig('channel_new_product')).toBe('999');
+    });
+
+    it('deletes values when null', () => {
+      db.setConfig('channel_new_product', '999');
+      db.setBotSetting('channel_new_product', null);
+      expect(db.getConfig('channel_new_product')).toBeNull();
+    });
+  });
 });

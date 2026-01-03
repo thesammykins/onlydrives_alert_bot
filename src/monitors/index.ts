@@ -27,18 +27,21 @@ export class MonitorOrchestrator {
       client,
       config.discord.alertChannelId,
       db,
-      config.monitoring.alertCooldownMs
+      config.monitoring
     );
   }
 
   start(): void {
-    console.log(`[Monitor] Starting price monitor (interval: ${this.config.monitoring.pollIntervalMs}ms)`);
+    const settings = this.db.getBotSettings();
+    const pollInterval = settings.pollIntervalMs ?? this.config.monitoring.pollIntervalMs;
+    
+    console.log(`[Monitor] Starting price monitor (interval: ${pollInterval}ms)`);
     
     this.runCheck().catch(console.error);
     
     this.intervalId = setInterval(() => {
       this.runCheck().catch(console.error);
-    }, this.config.monitoring.pollIntervalMs);
+    }, pollInterval);
   }
 
   stop(): void {
@@ -56,15 +59,28 @@ export class MonitorOrchestrator {
       const products = await this.api.fetchProducts();
       console.log(`[Monitor] Fetched ${products.length} products`);
 
+      const isFirstRun = !this.db.isInitialSyncComplete();
+      if (isFirstRun) {
+        console.log('[Monitor] First run detected - syncing products without alerts');
+      }
+
+      const settings = this.db.getBotSettings();
+      this.priceMonitor = new PriceMonitor({
+        priceDropThreshold: settings.priceDropThreshold ?? this.config.monitoring.priceDropThreshold,
+        priceSpikeThreshold: settings.priceSpikeThreshold ?? this.config.monitoring.priceSpikeThreshold,
+      });
+
       let alertCount = 0;
 
       for (const product of products) {
         const previousState = this.db.getProductState(product.id);
         const alerts = this.priceMonitor.detectChanges(product, previousState);
 
-        for (const alert of alerts) {
-          const sent = await this.alerter.sendAlert(alert);
-          if (sent) alertCount++;
+        if (!isFirstRun) {
+          for (const alert of alerts) {
+            const sent = await this.alerter.sendAlert(alert);
+            if (sent) alertCount++;
+          }
         }
 
         const newState: ProductState = {
@@ -81,7 +97,12 @@ export class MonitorOrchestrator {
         this.db.upsertProductState(newState);
       }
 
-      console.log(`[Monitor] Check complete. Sent ${alertCount} alerts.`);
+      if (isFirstRun) {
+        this.db.markInitialSyncComplete();
+        console.log(`[Monitor] Initial sync complete. Indexed ${products.length} products. Future runs will send alerts.`);
+      } else {
+        console.log(`[Monitor] Check complete. Sent ${alertCount} alerts.`);
+      }
     } catch (error) {
       console.error('[Monitor] Error during price check:', error);
     }

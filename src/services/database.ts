@@ -1,5 +1,5 @@
 import BetterSqlite3 from 'better-sqlite3';
-import type { ProductState, AlertType } from '../types.js';
+import type { ProductState, AlertType, BotSettings } from '../types.js';
 
 export class Database {
   private db: BetterSqlite3.Database;
@@ -32,7 +32,75 @@ export class Database {
       );
 
       CREATE INDEX IF NOT EXISTS idx_alerts_product_type ON alert_log(product_id, alert_type, sent_at);
+
+      CREATE TABLE IF NOT EXISTS bot_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
+  }
+
+  getConfig(key: string): string | null {
+    const stmt = this.db.prepare('SELECT value FROM bot_config WHERE key = ?');
+    const row = stmt.get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setConfig(key: string, value: string): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO bot_config (key, value, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `);
+    stmt.run(key, value, new Date().toISOString());
+  }
+
+  deleteConfig(key: string): void {
+    const stmt = this.db.prepare('DELETE FROM bot_config WHERE key = ?');
+    stmt.run(key);
+  }
+
+  getAllConfig(): Record<string, string> {
+    const stmt = this.db.prepare('SELECT key, value FROM bot_config');
+    const rows = stmt.all() as { key: string; value: string }[];
+    return Object.fromEntries(rows.map(r => [r.key, r.value]));
+  }
+
+  isInitialSyncComplete(): boolean {
+    return this.getConfig('initial_sync_complete') === 'true';
+  }
+
+  markInitialSyncComplete(): void {
+    this.setConfig('initial_sync_complete', 'true');
+  }
+
+  getBotSettings(): BotSettings {
+    const config = this.getAllConfig();
+    return {
+      channelPriceDrop: config['channel_price_drop'] ?? null,
+      channelPriceSpike: config['channel_price_spike'] ?? null,
+      channelNewProduct: config['channel_new_product'] ?? null,
+      channelBackInStock: config['channel_back_in_stock'] ?? null,
+      alertPriceDropEnabled: config['alert_price_drop_enabled'] !== 'false',
+      alertPriceSpikeEnabled: config['alert_price_spike_enabled'] !== 'false',
+      alertNewProductEnabled: config['alert_new_product_enabled'] !== 'false',
+      alertBackInStockEnabled: config['alert_back_in_stock_enabled'] !== 'false',
+      priceDropThreshold: config['price_drop_threshold'] ? parseFloat(config['price_drop_threshold']) : null,
+      priceSpikeThreshold: config['price_spike_threshold'] ? parseFloat(config['price_spike_threshold']) : null,
+      pollIntervalMs: config['poll_interval_ms'] ? parseInt(config['poll_interval_ms'], 10) : null,
+      alertCooldownMs: config['alert_cooldown_ms'] ? parseInt(config['alert_cooldown_ms'], 10) : null,
+    };
+  }
+
+  setBotSetting(key: string, value: string | null): void {
+    if (value === null) {
+      this.deleteConfig(key);
+    } else {
+      this.setConfig(key, value);
+    }
   }
 
   getProductState(productId: string): ProductState | null {

@@ -58,3 +58,18 @@ export interface Config {
   };
   logLevel: 'debug' | 'info' | 'warn' | 'error';
 }
+
+export interface BotSettings {
+  channelPriceDrop: string | null;
+  channelPriceSpike: string | null;
+  channelNewProduct: string | null;
+  channelBackInStock: string | null;
+  alertPriceDropEnabled: boolean;
+  alertPriceSpikeEnabled: boolean;
+  alertNewProductEnabled: boolean;
+  alertBackInStockEnabled: boolean;
+  priceDropThreshold: number | null;
+  priceSpikeThreshold: number | null;
+  pollIntervalMs: number | null;
+  alertCooldownMs: number | null;
+}
