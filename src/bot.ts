@@ -1,5 +1,5 @@
 import { Client, GatewayIntentBits, Events, Collection } from 'discord.js';
-import type { ChatInputCommandInteraction } from 'discord.js';
+import type { ChatInputCommandInteraction, AutocompleteInteraction } from 'discord.js';
 
 export interface Command {
   data: {
@@ -8,6 +8,7 @@ export interface Command {
     toJSON(): unknown;
   };
   execute(interaction: ChatInputCommandInteraction): Promise<void>;
+  autocomplete?(interaction: AutocompleteInteraction): Promise<void>;
 }
 
 export interface BotClient extends Client {
@@ -22,6 +23,18 @@ export function createClient(): BotClient {
   client.commands = new Collection<string, Command>();
 
   client.on(Events.InteractionCreate, async (interaction) => {
+    if (interaction.isAutocomplete()) {
+      const command = client.commands.get(interaction.commandName);
+      if (command?.autocomplete) {
+        try {
+          await command.autocomplete(interaction);
+        } catch (error) {
+          console.error(`[Bot] Autocomplete error:`, error);
+        }
+      }
+      return;
+    }
+
     if (!interaction.isChatInputCommand()) return;
 
     const command = client.commands.get(interaction.commandName);

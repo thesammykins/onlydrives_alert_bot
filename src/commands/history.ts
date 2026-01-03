@@ -1,7 +1,27 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import type { ChatInputCommandInteraction } from 'discord.js';
+import type { ChatInputCommandInteraction, AutocompleteInteraction } from 'discord.js';
 import type { Command } from '../bot.js';
+import type { Product } from '../types.js';
 import { OnlyDrivesApi } from '../services/api.js';
+
+let cachedProducts: Product[] = [];
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 60000;
+
+async function getProducts(api: OnlyDrivesApi): Promise<Product[]> {
+  const now = Date.now();
+  if (cachedProducts.length > 0 && now - cacheTimestamp < CACHE_TTL_MS) {
+    return cachedProducts;
+  }
+  
+  try {
+    cachedProducts = await api.fetchProducts();
+    cacheTimestamp = now;
+  } catch {
+    // Return stale cache on error
+  }
+  return cachedProducts;
+}
 
 export function createHistoryCommand(): Command {
   const api = new OnlyDrivesApi();
@@ -15,7 +35,37 @@ export function createHistoryCommand(): Command {
           .setName('sku')
           .setDescription('Product SKU (e.g., "amazon-B0CHGT3XXW")')
           .setRequired(true)
+          .setAutocomplete(true)
       ),
+
+    async autocomplete(interaction: AutocompleteInteraction): Promise<void> {
+      const focused = interaction.options.getFocused().toLowerCase();
+      const products = await getProducts(api);
+
+      const availableProducts = products
+        .filter(p => p.available)
+        .map(p => ({
+          sku: `${p.source}-${p.sku}`,
+          name: p.name,
+          pricePerTb: parseFloat(p.current_price_per_tb),
+          capacityTb: parseFloat(p.capacity_tb),
+        }))
+        .sort((a, b) => a.pricePerTb - b.pricePerTb);
+
+      const filtered = focused
+        ? availableProducts.filter(p => 
+            p.sku.toLowerCase().includes(focused) || 
+            p.name.toLowerCase().includes(focused)
+          )
+        : availableProducts;
+
+      const choices = filtered.slice(0, 25).map(p => ({
+        name: `$${p.pricePerTb.toFixed(2)}/TB - ${p.name.slice(0, 60)} (${p.capacityTb}TB)`,
+        value: p.sku,
+      }));
+
+      await interaction.respond(choices);
+    },
 
     async execute(interaction: ChatInputCommandInteraction): Promise<void> {
       await interaction.deferReply();
