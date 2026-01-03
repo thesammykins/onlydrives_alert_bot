@@ -9,11 +9,14 @@ A Discord bot that monitors drive prices from the OnlyDrives API and alerts user
 - **Price Spike Alerts**: Notified when prices increase by threshold (default: 10%)
 - **New Product Alerts**: Notified when new products appear
 - **Back in Stock Alerts**: Notified when products become available again
+- **Personal SKU Alerts**: Subscribe to specific SKUs and receive alerts via DM or in-channel
 - **Slash Commands**:
   - `/status` - Show bot status and last check time
   - `/deals` - List current best $/TB deals with optional filters
   - `/history <sku>` - Show price history for a product
   - `/config` - Configure bot settings at runtime (Admin only)
+  - `/alert` - Manage personal SKU price alert subscriptions
+- **@Bot Mention Commands**: Subscribe to alerts by mentioning the bot
 - **Runtime Configuration**: All settings can be configured via `/config` command
 - **Per-Alert Channels**: Route different alert types to different channels
 - **Alert Toggles**: Enable/disable specific alert types
@@ -47,7 +50,7 @@ A Discord bot that monitors drive prices from the OnlyDrives API and alerts user
 Still in the **Bot** tab:
 
 1. Scroll down to **Privileged Gateway Intents**
-   - **No privileged intents are required** for this bot
+   - Enable **Message Content Intent** (required for @mention commands)
 2. Under **Bot Permissions**, the bot needs:
    - `Send Messages`
    - `Embed Links`
@@ -226,6 +229,37 @@ Configure the bot at runtime. All settings persist across restarts.
 /config cooldown 60
 ```
 
+### `/alert`
+Manage personal SKU price alert subscriptions.
+
+**Subcommands:**
+- `/alert add <sku> <delivery> [channel]` - Subscribe to alerts for a SKU
+  - `delivery`: "Direct Message" or "In Channel"
+  - `channel`: Required if delivery is "In Channel"
+- `/alert remove <sku>` - Unsubscribe from a SKU
+- `/alert list` - View your active subscriptions
+
+**Examples:**
+```
+/alert add ST8000DM004 dm
+/alert add WD80EFAX channel #drive-alerts
+/alert remove ST8000DM004
+/alert list
+```
+
+### @Bot Mention Commands
+You can also manage subscriptions by mentioning the bot:
+
+```
+@OnlyDrives subscribe ST8000DM004
+@OnlyDrives subscribe ST8000DM004 channel
+@OnlyDrives unsubscribe ST8000DM004
+@OnlyDrives list
+@OnlyDrives help
+```
+
+Or send the bot a DM with commands (no @mention needed).
+
 ## Alert Types
 
 | Alert | Color | Trigger |
@@ -234,6 +268,7 @@ Configure the bot at runtime. All settings persist across restarts.
 | Price Spike | Red | Price increases by configured threshold |
 | New Product | Blue | Previously unseen product appears |
 | Back in Stock | Blue | Product becomes available again |
+| SKU Subscription | Green | Price change on a SKU you're subscribed to |
 
 ## Managing the Bot
 
@@ -278,6 +313,7 @@ The database stores:
 - Last known prices for change detection
 - Alert deduplication logs
 - Runtime configuration (from `/config` commands)
+- User SKU subscriptions (from `/alert` commands)
 - Initial sync flag (prevents alert spam on first run)
 
 Full price history is fetched from the OnlyDrives API when needed.

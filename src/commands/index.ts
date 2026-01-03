@@ -4,6 +4,7 @@ import { createStatusCommand } from './status.js';
 import { createDealsCommand } from './deals.js';
 import { createHistoryCommand } from './history.js';
 import { createConfigCommand } from './config.js';
+import { createAlertCommand } from './alert.js';
 
 export function loadCommands(db: Database): Command[] {
   return [
@@ -11,5 +12,6 @@ export function loadCommands(db: Database): Command[] {
     createDealsCommand(),
     createHistoryCommand(),
     createConfigCommand(db),
+    createAlertCommand(db),
   ];
 }

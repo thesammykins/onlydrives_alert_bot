@@ -1,5 +1,5 @@
 import BetterSqlite3 from 'better-sqlite3';
-import type { ProductState, AlertType, BotSettings } from '../types.js';
+import type { ProductState, AlertType, BotSettings, SkuSubscription } from '../types.js';
 
 export class Database {
   private db: BetterSqlite3.Database;
@@ -38,6 +38,19 @@ export class Database {
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS sku_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        sku TEXT NOT NULL,
+        delivery_method TEXT NOT NULL DEFAULT 'dm',
+        channel_id TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(user_id, sku)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_subscriptions_sku ON sku_subscriptions(sku);
+      CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON sku_subscriptions(user_id);
     `);
   }
 
@@ -190,6 +203,52 @@ export class Database {
     const lastSent = new Date(row.sent_at).getTime();
     const now = Date.now();
     return (now - lastSent) >= cooldownMs;
+  }
+
+  addSkuSubscription(userId: string, sku: string, deliveryMethod: 'dm' | 'channel', channelId: string | null): boolean {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO sku_subscriptions (user_id, sku, delivery_method, channel_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      stmt.run(userId, sku.toUpperCase(), deliveryMethod, channelId, new Date().toISOString());
+      return true;
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  removeSkuSubscription(userId: string, sku: string): boolean {
+    const stmt = this.db.prepare(`
+      DELETE FROM sku_subscriptions WHERE user_id = ? AND sku = ?
+    `);
+    const result = stmt.run(userId, sku.toUpperCase());
+    return result.changes > 0;
+  }
+
+  getUserSubscriptions(userId: string): SkuSubscription[] {
+    const stmt = this.db.prepare(`
+      SELECT id, user_id, sku, delivery_method, channel_id, created_at FROM sku_subscriptions WHERE user_id = ?
+    `);
+    return stmt.all(userId) as SkuSubscription[];
+  }
+
+  getSubscribersForSku(sku: string): SkuSubscription[] {
+    const stmt = this.db.prepare(`
+      SELECT id, user_id, sku, delivery_method, channel_id, created_at FROM sku_subscriptions WHERE sku = ?
+    `);
+    return stmt.all(sku.toUpperCase()) as SkuSubscription[];
+  }
+
+  getAllSubscribedSkus(): string[] {
+    const stmt = this.db.prepare(`
+      SELECT DISTINCT sku FROM sku_subscriptions
+    `);
+    const rows = stmt.all() as { sku: string }[];
+    return rows.map(r => r.sku);
   }
 
   close(): void {

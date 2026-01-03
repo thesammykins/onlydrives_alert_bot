@@ -1,5 +1,5 @@
-import type { Client, TextChannel } from 'discord.js';
-import type { AlertEvent, AlertType, BotSettings, Config } from '../types.js';
+import type { Client, TextChannel, User } from 'discord.js';
+import type { AlertEvent, AlertType, BotSettings, Config, SkuSubscription } from '../types.js';
 import { createAlertEmbed } from '../utils/embed.js';
 import { Database } from './database.js';
 
@@ -59,6 +59,48 @@ export class Alerter {
     }
   }
 
+  async sendSubscriptionAlerts(alert: AlertEvent): Promise<number> {
+    const sku = alert.product.sku.toUpperCase();
+    const subscriptions = this.db.getSubscribersForSku(sku);
+    
+    if (subscriptions.length === 0) {
+      return 0;
+    }
+
+    const embed = createAlertEmbed(alert);
+    let sentCount = 0;
+
+    for (const sub of subscriptions) {
+      try {
+        if (sub.delivery_method === 'dm') {
+          const user = await this.getUser(sub.user_id);
+          if (user) {
+            await user.send({ 
+              content: `🔔 Price alert for **${sku}**:`,
+              embeds: [embed] 
+            });
+            sentCount++;
+            console.log(`[Alerter] Sent subscription alert for ${sku} to user ${user.tag} via DM`);
+          }
+        } else if (sub.delivery_method === 'channel' && sub.channel_id) {
+          const channel = await this.getChannel(sub.channel_id);
+          if (channel) {
+            await channel.send({ 
+              content: `🔔 <@${sub.user_id}> Price alert for **${sku}**:`,
+              embeds: [embed] 
+            });
+            sentCount++;
+            console.log(`[Alerter] Sent subscription alert for ${sku} to channel #${channel.name}`);
+          }
+        }
+      } catch (error) {
+        console.error(`[Alerter] Failed to send subscription alert to ${sub.user_id}:`, error);
+      }
+    }
+
+    return sentCount;
+  }
+
   private isAlertTypeEnabled(alertType: AlertType, settings: BotSettings): boolean {
     switch (alertType) {
       case 'price_drop':
@@ -96,6 +138,14 @@ export class Alerter {
         return channel as TextChannel;
       }
       return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async getUser(userId: string): Promise<User | null> {
+    try {
+      return await this.client.users.fetch(userId);
     } catch {
       return null;
     }

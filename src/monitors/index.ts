@@ -71,6 +71,7 @@ export class MonitorOrchestrator {
       });
 
       let alertCount = 0;
+      let subscriptionAlertCount = 0;
 
       for (const product of products) {
         const previousState = this.db.getProductState(product.id);
@@ -80,6 +81,11 @@ export class MonitorOrchestrator {
           for (const alert of alerts) {
             const sent = await this.alerter.sendAlert(alert);
             if (sent) alertCount++;
+            
+            if (alert.type === 'price_drop' || alert.type === 'price_spike' || alert.type === 'back_in_stock') {
+              const subSent = await this.alerter.sendSubscriptionAlerts(alert);
+              subscriptionAlertCount += subSent;
+            }
           }
         }
 
@@ -101,7 +107,7 @@ export class MonitorOrchestrator {
         this.db.markInitialSyncComplete();
         console.log(`[Monitor] Initial sync complete. Indexed ${products.length} products. Future runs will send alerts.`);
       } else {
-        console.log(`[Monitor] Check complete. Sent ${alertCount} alerts.`);
+        console.log(`[Monitor] Check complete. Sent ${alertCount} channel alerts, ${subscriptionAlertCount} subscription alerts.`);
       }
     } catch (error) {
       console.error('[Monitor] Error during price check:', error);

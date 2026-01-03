@@ -73,3 +73,12 @@ export interface BotSettings {
   pollIntervalMs: number | null;
   alertCooldownMs: number | null;
 }
+
+export interface SkuSubscription {
+  id: number;
+  user_id: string;
+  sku: string;
+  delivery_method: 'dm' | 'channel';
+  channel_id: string | null;
+  created_at: string;
+}

@@ -1,5 +1,5 @@
 import { Events } from 'discord.js';
-import { createClient } from './bot.js';
+import { createClient, setupMessageHandler } from './bot.js';
 import { loadConfig } from './config.js';
 import { Database } from './services/database.js';
 import { MonitorOrchestrator } from './monitors/index.js';
@@ -30,6 +30,9 @@ async function main(): Promise<void> {
     client.commands.set(command.data.name, command);
   }
   console.log(`[Main] Loaded ${commands.length} commands`);
+
+  setupMessageHandler(client, db);
+  console.log('[Main] Message handler configured');
 
   client.once(Events.ClientReady, (readyClient) => {
     console.log(`[Main] Logged in as ${readyClient.user.tag}`);

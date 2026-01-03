@@ -228,4 +228,62 @@ describe('Database', () => {
       expect(db.getConfig('channel_new_product')).toBeNull();
     });
   });
+
+  describe('SKU subscriptions', () => {
+    it('adds a subscription', () => {
+      const success = db.addSkuSubscription('user-1', 'TEST-SKU', 'dm', null);
+      expect(success).toBe(true);
+
+      const subs = db.getUserSubscriptions('user-1');
+      expect(subs).toHaveLength(1);
+      expect(subs[0].sku).toBe('TEST-SKU');
+      expect(subs[0].delivery_method).toBe('dm');
+    });
+
+    it('prevents duplicate subscriptions', () => {
+      db.addSkuSubscription('user-1', 'DUP-SKU', 'dm', null);
+      const duplicate = db.addSkuSubscription('user-1', 'dup-sku', 'channel', 'chan-123');
+      expect(duplicate).toBe(false);
+    });
+
+    it('removes a subscription', () => {
+      db.addSkuSubscription('user-1', 'REMOVE-ME', 'dm', null);
+      const removed = db.removeSkuSubscription('user-1', 'remove-me');
+      expect(removed).toBe(true);
+
+      const subs = db.getUserSubscriptions('user-1');
+      expect(subs).toHaveLength(0);
+    });
+
+    it('returns false when removing non-existent subscription', () => {
+      const removed = db.removeSkuSubscription('user-1', 'NONEXISTENT');
+      expect(removed).toBe(false);
+    });
+
+    it('gets subscribers for SKU', () => {
+      db.addSkuSubscription('user-1', 'SHARED-SKU', 'dm', null);
+      db.addSkuSubscription('user-2', 'shared-sku', 'channel', 'chan-456');
+
+      const subs = db.getSubscribersForSku('SHARED-SKU');
+      expect(subs).toHaveLength(2);
+      expect(subs.map(s => s.user_id).sort()).toEqual(['user-1', 'user-2']);
+    });
+
+    it('gets all subscribed SKUs', () => {
+      db.addSkuSubscription('user-1', 'SKU-A', 'dm', null);
+      db.addSkuSubscription('user-2', 'SKU-B', 'dm', null);
+      db.addSkuSubscription('user-3', 'sku-a', 'channel', 'chan-789');
+
+      const skus = db.getAllSubscribedSkus();
+      expect(skus.sort()).toEqual(['SKU-A', 'SKU-B']);
+    });
+
+    it('stores channel delivery correctly', () => {
+      db.addSkuSubscription('user-1', 'CHANNEL-SKU', 'channel', 'chan-999');
+
+      const subs = db.getUserSubscriptions('user-1');
+      expect(subs[0].delivery_method).toBe('channel');
+      expect(subs[0].channel_id).toBe('chan-999');
+    });
+  });
 });
