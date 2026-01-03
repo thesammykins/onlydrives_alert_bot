@@ -77,10 +77,18 @@ export class MonitorOrchestrator {
         const previousState = this.db.getProductState(product.id);
         const alerts = this.priceMonitor.detectChanges(product, previousState);
 
+        // Track if a price-related alert was sent (affects whether we update baseline price)
+        let priceAlertSent = false;
+
         if (!isFirstRun) {
           for (const alert of alerts) {
             const sent = await this.alerter.sendAlert(alert);
-            if (sent) alertCount++;
+            if (sent) {
+              alertCount++;
+              if (alert.type === 'price_drop' || alert.type === 'price_spike') {
+                priceAlertSent = true;
+              }
+            }
             
             if (alert.type === 'price_drop' || alert.type === 'price_spike' || alert.type === 'back_in_stock') {
               const subSent = await this.alerter.sendSubscriptionAlerts(alert);
@@ -89,12 +97,23 @@ export class MonitorOrchestrator {
           }
         }
 
+        // Only update baseline price when:
+        // 1. First run (initial sync) - establish baseline
+        // 2. A price alert was sent - reset baseline to current price
+        // This prevents incremental price changes from "creeping" the baseline
+        // without triggering alerts (e.g., 2% + 2% + 2% should still alert at 6%)
+        const shouldUpdatePrice = isFirstRun || priceAlertSent || !previousState;
+        
         const newState: ProductState = {
           product_id: product.id,
           sku: product.sku,
           source: product.source,
-          last_price_total: PriceMonitor.parsePrice(product.current_price_total),
-          last_price_per_tb: PriceMonitor.parsePrice(product.current_price_per_tb),
+          last_price_total: shouldUpdatePrice 
+            ? PriceMonitor.parsePrice(product.current_price_total)
+            : previousState!.last_price_total,
+          last_price_per_tb: shouldUpdatePrice
+            ? PriceMonitor.parsePrice(product.current_price_per_tb)
+            : previousState!.last_price_per_tb,
           last_available: product.available,
           last_checked_at: new Date().toISOString(),
           first_seen_at: previousState?.first_seen_at ?? new Date().toISOString(),

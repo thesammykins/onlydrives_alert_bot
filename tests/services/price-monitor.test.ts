@@ -79,6 +79,22 @@ describe('PriceMonitor', () => {
       expect(alerts).toHaveLength(0);
     });
 
+    it('cumulative small changes eventually trigger alert when baseline preserved', () => {
+      const state = createState({ last_price_total: 200 });
+      
+      const product1 = createProduct({ current_price_total: '196.00' });
+      expect(monitor.detectChanges(product1, state)).toHaveLength(0);
+      
+      const product2 = createProduct({ current_price_total: '192.00' });
+      expect(monitor.detectChanges(product2, state)).toHaveLength(0);
+      
+      const product3 = createProduct({ current_price_total: '188.00' });
+      const alerts = monitor.detectChanges(product3, state);
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]?.type).toBe('price_drop');
+      expect(alerts[0]?.percentChange).toBeCloseTo(-0.06);
+    });
+
     it('detects back in stock', () => {
       const product = createProduct({ available: true });
       const state = createState({ last_available: false });
