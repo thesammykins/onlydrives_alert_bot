@@ -3,6 +3,7 @@ import {
   ChatInputCommandInteraction,
   ChannelType,
   AutocompleteInteraction,
+  MessageFlags,
 } from 'discord.js';
 import type { Command } from '../bot.js';
 import type { Database } from '../services/database.js';
@@ -109,7 +110,7 @@ async function handleAdd(
   if (delivery === 'channel' && !channel) {
     await interaction.reply({
       content: '❌ You must specify a channel when using "In Channel" delivery.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -123,12 +124,12 @@ async function handleAdd(
       : `in <#${channelId}>`;
     await interaction.reply({
       content: `✅ You will now receive price alerts for **${sku}** ${deliveryText}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     await interaction.reply({
       content: `⚠️ You are already subscribed to **${sku}**. Use \`/alert remove\` first to change settings.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -143,12 +144,12 @@ async function handleRemove(
   if (success) {
     await interaction.reply({
       content: `✅ Removed subscription for **${sku}**`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     await interaction.reply({
       content: `⚠️ You are not subscribed to **${sku}**`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -162,7 +163,7 @@ async function handleList(
   if (subscriptions.length === 0) {
     await interaction.reply({
       content: 'You have no active SKU subscriptions. Use `/alert add` to subscribe.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -176,6 +177,6 @@ async function handleList(
 
   await interaction.reply({
     content: `**Your SKU Subscriptions:**\n${lines.join('\n')}`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }

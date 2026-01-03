@@ -3,6 +3,7 @@ import {
   ChatInputCommandInteraction,
   PermissionFlagsBits,
   ChannelType,
+  MessageFlags,
 } from 'discord.js';
 import type { Command } from '../bot.js';
 import type { Database } from '../services/database.js';
@@ -192,7 +193,7 @@ async function handleShow(interaction: ChatInputCommandInteraction, db: Database
     `- Alert Cooldown: ${settings.alertCooldownMs !== null ? `${settings.alertCooldownMs / 60000}min` : '(default from .env)'}`,
   ];
 
-  await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+  await interaction.reply({ content: lines.join('\n'), flags: MessageFlags.Ephemeral });
 }
 
 async function handleChannel(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
@@ -204,13 +205,13 @@ async function handleChannel(interaction: ChatInputCommandInteraction, db: Datab
     db.setBotSetting(configKey, channel.id);
     await interaction.reply({
       content: `✅ ${formatAlertType(alertType)} alerts will now be sent to <#${channel.id}>`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     db.setBotSetting(configKey, null);
     await interaction.reply({
       content: `✅ ${formatAlertType(alertType)} alerts will now use the default channel`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -224,7 +225,7 @@ async function handleToggle(interaction: ChatInputCommandInteraction, db: Databa
   
   await interaction.reply({
     content: `✅ ${formatAlertType(alertType)} alerts are now ${enabled ? '**enabled**' : '**disabled**'}`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -238,13 +239,13 @@ async function handleThreshold(interaction: ChatInputCommandInteraction, db: Dat
     db.setBotSetting(configKey, decimal.toString());
     await interaction.reply({
       content: `✅ ${formatAlertType(type)} threshold set to **${percent}%**`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     db.setBotSetting(configKey, null);
     await interaction.reply({
       content: `✅ ${formatAlertType(type)} threshold reset to .env default`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -257,13 +258,13 @@ async function handleInterval(interaction: ChatInputCommandInteraction, db: Data
     db.setBotSetting('poll_interval_ms', ms.toString());
     await interaction.reply({
       content: `✅ Poll interval set to **${seconds} seconds**\n⚠️ Restart the bot for this change to take effect.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     db.setBotSetting('poll_interval_ms', null);
     await interaction.reply({
       content: `✅ Poll interval reset to .env default\n⚠️ Restart the bot for this change to take effect.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -276,13 +277,13 @@ async function handleCooldown(interaction: ChatInputCommandInteraction, db: Data
     db.setBotSetting('alert_cooldown_ms', ms.toString());
     await interaction.reply({
       content: `✅ Alert cooldown set to **${minutes} minutes**`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } else {
     db.setBotSetting('alert_cooldown_ms', null);
     await interaction.reply({
       content: `✅ Alert cooldown reset to .env default`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -294,7 +295,7 @@ async function handleReset(interaction: ChatInputCommandInteraction, db: Databas
 
   await interaction.reply({
     content: '✅ All settings reset to .env defaults\n⚠️ Restart the bot for interval changes to take effect.',
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 

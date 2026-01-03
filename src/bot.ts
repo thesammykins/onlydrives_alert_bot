@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, Collection, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, Events, Collection, Partials, MessageFlags } from 'discord.js';
 import type { ChatInputCommandInteraction, AutocompleteInteraction, Message } from 'discord.js';
 import type { Database } from './services/database.js';
 
@@ -54,11 +54,10 @@ export function createClient(): BotClient {
       await command.execute(interaction);
     } catch (error) {
       console.error(`[Bot] Command error:`, error);
-      const reply = { content: 'An error occurred while executing this command.', ephemeral: true };
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(reply);
+        await interaction.followUp({ content: 'An error occurred while executing this command.', flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.reply(reply);
+        await interaction.reply({ content: 'An error occurred while executing this command.', flags: MessageFlags.Ephemeral });
       }
     }
   });
