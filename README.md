@@ -81,7 +81,7 @@ To get the IDs needed for configuration:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/onlydrives_alert_bot.git
+   git clone https://github.com/thesammykins/onlydrives_alert_bot.git
    cd onlydrives_alert_bot
    ```
 
@@ -125,7 +125,7 @@ To get the IDs needed for configuration:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/onlydrives_alert_bot.git
+   git clone https://github.com/thesammykins/onlydrives_alert_bot.git
    cd onlydrives_alert_bot
    ```
 
