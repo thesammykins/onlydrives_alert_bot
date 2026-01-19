@@ -1,6 +1,6 @@
 {
   "name": "onlydrives-alert-bot",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Discord bot for monitoring OnlyDrives price changes",
   "main": "dist/index.js",
   "type": "module",
