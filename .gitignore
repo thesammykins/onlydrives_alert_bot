@@ -44,3 +44,9 @@ Thumbs.db
 
 # Sisyphus agent configs (local development)
 .sisyphus/
+
+# Beads
+.beads/
+
+# OpenCode
+.opencode/
