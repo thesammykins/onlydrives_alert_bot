@@ -1,6 +1,6 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/thesammykins/onlydrives_alert_bot:latest
     restart: unless-stopped
     env_file:
       - .env
