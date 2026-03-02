@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Database } from '../../src/services/database.js';
 import { unlink } from 'fs/promises';
-import type { ProductState } from '../../src/types.js';
+import type { Product, ProductState } from '../../src/types.js';
 
 const TEST_DB_PATH = ':memory:';
 
@@ -191,6 +191,27 @@ describe('Database', () => {
     });
   });
 
+  describe('user preferences', () => {
+    it('upserts and retrieves preferences', () => {
+      expect(db.getUserPreferences('user-1')).toBeNull();
+
+      db.upsertUserPreferences('user-1', 22, 6);
+      const prefs = db.getUserPreferences('user-1');
+
+      expect(prefs?.quiet_start_hour).toBe(22);
+      expect(prefs?.quiet_end_hour).toBe(6);
+    });
+
+    it('clears preferences when set to null', () => {
+      db.upsertUserPreferences('user-1', 8, 17);
+      db.upsertUserPreferences('user-1', null, null);
+
+      const prefs = db.getUserPreferences('user-1');
+      expect(prefs?.quiet_start_hour).toBeNull();
+      expect(prefs?.quiet_end_hour).toBeNull();
+    });
+  });
+
   describe('getBotSettings', () => {
     it('returns defaults when no config set', () => {
       const settings = db.getBotSettings();
@@ -240,6 +261,21 @@ describe('Database', () => {
       expect(subs[0].delivery_method).toBe('dm');
     });
 
+    it('adds multiple subscriptions with thresholds', () => {
+      const results = db.addSkuSubscriptions('user-1', ['SKU-A', 'SKU-B'], 'dm', null, {
+        priceDropThreshold: 0.08,
+        priceSpikeThreshold: 0.12,
+      });
+
+      expect(results.added.sort()).toEqual(['SKU-A', 'SKU-B']);
+      expect(results.duplicates).toHaveLength(0);
+
+      const subs = db.getUserSubscriptions('user-1');
+      expect(subs).toHaveLength(2);
+      expect(subs[0].price_drop_threshold).toBe(0.08);
+      expect(subs[0].price_spike_threshold).toBe(0.12);
+    });
+
     it('prevents duplicate subscriptions', () => {
       db.addSkuSubscription('user-1', 'DUP-SKU', 'dm', null);
       const duplicate = db.addSkuSubscription('user-1', 'dup-sku', 'channel', 'chan-123');
@@ -284,6 +320,60 @@ describe('Database', () => {
       const subs = db.getUserSubscriptions('user-1');
       expect(subs[0].delivery_method).toBe('channel');
       expect(subs[0].channel_id).toBe('chan-999');
+    });
+  });
+
+  describe('product cache', () => {
+    function makeProduct(overrides: Partial<Product> = {}): Product {
+      return {
+        id: 'src-SKU-1',
+        sku: 'SKU-1',
+        name: 'Test Drive 1TB',
+        type: 'HDD',
+        condition: 'New',
+        capacity_tb: '1',
+        url: 'https://example.com/drive',
+        image_url: 'https://example.com/img.png',
+        available: true,
+        current_price_total: '100.00',
+        current_price_per_tb: '100.00',
+        last_seen_at: '2026-01-01T00:00:00.000Z',
+        first_seen_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        source: 'src',
+        ...overrides,
+      };
+    }
+
+    it('getCachedProducts returns empty array when cache is empty', () => {
+      expect(db.getCachedProducts()).toEqual([]);
+    });
+
+    it('upsertCachedProducts stores and retrieves products', () => {
+      const product = makeProduct();
+      db.upsertCachedProducts([product]);
+      const cached = db.getCachedProducts();
+      expect(cached).toHaveLength(1);
+      expect(cached[0]!.id).toBe('src-SKU-1');
+      expect(cached[0]!.name).toBe('Test Drive 1TB');
+    });
+
+    it('upsertCachedProducts updates when data changes', () => {
+      const product = makeProduct();
+      db.upsertCachedProducts([product]);
+      db.upsertCachedProducts([{ ...product, current_price_total: '90.00' }]);
+      const cached = db.getCachedProducts();
+      expect(cached).toHaveLength(1);
+      expect(cached[0]!.current_price_total).toBe('90.00');
+    });
+
+    it('handles multiple products', () => {
+      const p1 = makeProduct({ id: 'src-SKU-1', sku: 'SKU-1' });
+      const p2 = makeProduct({ id: 'src-SKU-2', sku: 'SKU-2', name: 'Test Drive 2TB' });
+      db.upsertCachedProducts([p1, p2]);
+      const cached = db.getCachedProducts();
+      expect(cached).toHaveLength(2);
+      expect(cached.map(p => p.sku).sort()).toEqual(['SKU-1', 'SKU-2']);
     });
   });
 });
