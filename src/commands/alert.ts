@@ -29,6 +29,16 @@ export function createAlertCommand(db: Database): Command {
             .setRequired(true)
             .setAutocomplete(true)
         )
+        .addStringOption(opt =>
+          opt
+            .setName('delivery')
+            .setDescription('How to receive alerts')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Direct Message', value: 'dm' },
+              { name: 'In Channel', value: 'channel' }
+            )
+        )
         .addNumberOption(opt =>
           opt
             .setName('price_drop')
@@ -42,16 +52,6 @@ export function createAlertCommand(db: Database): Command {
             .setDescription('Override spike threshold for these SKUs (percent)')
             .setMinValue(0)
             .setMaxValue(100)
-        )
-        .addStringOption(opt =>
-          opt
-            .setName('delivery')
-            .setDescription('How to receive alerts')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Direct Message', value: 'dm' },
-              { name: 'In Channel', value: 'channel' }
-            )
         )
         .addChannelOption(opt =>
           opt
