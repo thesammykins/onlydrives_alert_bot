@@ -62,7 +62,7 @@ export class Alerter {
   async sendSubscriptionAlerts(alert: AlertEvent): Promise<number> {
     const sku = alert.product.sku.toUpperCase();
     const subscriptions = this.db.getSubscribersForSku(sku);
-    
+
     if (subscriptions.length === 0) {
       return 0;
     }
@@ -71,13 +71,21 @@ export class Alerter {
     let sentCount = 0;
 
     for (const sub of subscriptions) {
+      if (!this.shouldSendSubscriptionAlert(alert, sub)) {
+        continue;
+      }
+
+      if (this.isQuietHours(sub.user_id)) {
+        continue;
+      }
+
       try {
         if (sub.delivery_method === 'dm') {
           const user = await this.getUser(sub.user_id);
           if (user) {
-            await user.send({ 
+            await user.send({
               content: `🔔 Price alert for **${sku}**:`,
-              embeds: [embed] 
+              embeds: [embed],
             });
             sentCount++;
             console.log(`[Alerter] Sent subscription alert for ${sku} to user ${user.tag} via DM`);
@@ -85,9 +93,9 @@ export class Alerter {
         } else if (sub.delivery_method === 'channel' && sub.channel_id) {
           const channel = await this.getChannel(sub.channel_id);
           if (channel) {
-            await channel.send({ 
+            await channel.send({
               content: `🔔 <@${sub.user_id}> Price alert for **${sku}**:`,
-              embeds: [embed] 
+              embeds: [embed],
             });
             sentCount++;
             console.log(`[Alerter] Sent subscription alert for ${sku} to channel #${channel.name}`);
@@ -99,6 +107,39 @@ export class Alerter {
     }
 
     return sentCount;
+  }
+
+  private shouldSendSubscriptionAlert(alert: AlertEvent, sub: SkuSubscription): boolean {
+    if (alert.type === 'price_drop' && sub.price_drop_threshold !== null) {
+      return (alert.percentChange ?? 0) <= -sub.price_drop_threshold;
+    }
+
+    if (alert.type === 'price_spike' && sub.price_spike_threshold !== null) {
+      return (alert.percentChange ?? 0) >= sub.price_spike_threshold;
+    }
+
+    return true;
+  }
+
+  private isQuietHours(userId: string): boolean {
+    const prefs = this.db.getUserPreferences(userId);
+    if (!prefs || prefs.quiet_start_hour === null || prefs.quiet_end_hour === null) {
+      return false;
+    }
+
+    const currentHour = new Date().getHours();
+    const start = prefs.quiet_start_hour;
+    const end = prefs.quiet_end_hour;
+
+    if (start === end) {
+      return true;
+    }
+
+    if (start < end) {
+      return currentHour >= start && currentHour < end;
+    }
+
+    return currentHour >= start || currentHour < end;
   }
 
   private isAlertTypeEnabled(alertType: AlertType, settings: BotSettings): boolean {

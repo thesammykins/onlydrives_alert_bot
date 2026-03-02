@@ -80,5 +80,14 @@ export interface SkuSubscription {
   sku: string;
   delivery_method: 'dm' | 'channel';
   channel_id: string | null;
+  price_drop_threshold: number | null;
+  price_spike_threshold: number | null;
   created_at: string;
+}
+
+export interface UserPreferences {
+  user_id: string;
+  quiet_start_hour: number | null;
+  quiet_end_hour: number | null;
+  updated_at: string;
 }
