@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, Events, Collection, Partials, MessageFlags } from 'discord.js';
 import type { ChatInputCommandInteraction, AutocompleteInteraction, Message } from 'discord.js';
 import type { Database } from './services/database.js';
+import { formatSkuList, parseSkuList } from './utils/sku.js';
 
 export interface Command {
   data: {
@@ -94,8 +95,8 @@ export function setupMessageHandler(client: BotClient, db: Database): void {
       } else if (command === 'help' || command === '') {
         await message.reply(
           '**Available commands:**\n' +
-          '• `subscribe <sku> [dm|channel]` - Subscribe to alerts\n' +
-          '• `unsubscribe <sku>` - Remove a subscription\n' +
+          '• `subscribe <sku1,sku2> [dm|channel]` - Subscribe to alerts\n' +
+          '• `unsubscribe <sku1,sku2>` - Remove subscriptions\n' +
           '• `list` - View your subscriptions\n\n' +
           'Or use `/alert` slash command for full options.'
         );
@@ -114,13 +115,11 @@ export function setupMessageHandler(client: BotClient, db: Database): void {
 async function handleSubscribeViaMention(message: Message, db: Database, args: string[]): Promise<void> {
   const skuArg = args[0];
   if (!skuArg) {
-    await message.reply('Please specify a SKU. Example: `subscribe ST8000DM004`');
+    await message.reply('Please specify a SKU list. Example: `subscribe ST8000DM004,WD80EFAX`');
     return;
   }
 
-  const sku = skuArg.toUpperCase();
   const deliveryArg = args[1]?.toLowerCase();
-  
   let delivery: 'dm' | 'channel' = 'dm';
   let channelId: string | null = null;
 
@@ -133,31 +132,51 @@ async function handleSubscribeViaMention(message: Message, db: Database, args: s
     channelId = message.channelId;
   }
 
-  const success = db.addSkuSubscription(message.author.id, sku, delivery, channelId);
-
-  if (success) {
-    const deliveryText = delivery === 'dm' ? 'via DM' : `in this channel`;
-    await message.reply(`✅ Subscribed to price alerts for **${sku}** ${deliveryText}`);
-  } else {
-    await message.reply(`⚠️ You're already subscribed to **${sku}**`);
+  const { valid, invalid } = parseSkuList(skuArg);
+  if (valid.length === 0) {
+    await message.reply('Please provide at least one valid SKU. Example: `subscribe ST8000DM004`');
+    return;
   }
+
+  const results = db.addSkuSubscriptions(message.author.id, valid, delivery, channelId);
+  const addedText = results.added.length > 0
+    ? `✅ Subscribed to ${formatSkuList(results.added)} ${delivery === 'dm' ? 'via DM' : 'in this channel'}`
+    : '';
+  const duplicateText = results.duplicates.length > 0
+    ? `⚠️ Already subscribed: ${formatSkuList(results.duplicates)}`
+    : '';
+  const invalidText = invalid.length > 0
+    ? `❌ Invalid SKUs: ${formatSkuList(invalid)}`
+    : '';
+
+  await message.reply([addedText, duplicateText, invalidText].filter(Boolean).join('\n'));
 }
 
 async function handleUnsubscribeViaMention(message: Message, db: Database, args: string[]): Promise<void> {
   const skuArg = args[0];
   if (!skuArg) {
-    await message.reply('Please specify a SKU. Example: `unsubscribe ST8000DM004`');
+    await message.reply('Please specify a SKU list. Example: `unsubscribe ST8000DM004,WD80EFAX`');
     return;
   }
 
-  const sku = skuArg.toUpperCase();
-  const success = db.removeSkuSubscription(message.author.id, sku);
-
-  if (success) {
-    await message.reply(`✅ Removed subscription for **${sku}**`);
-  } else {
-    await message.reply(`⚠️ You're not subscribed to **${sku}**`);
+  const { valid, invalid } = parseSkuList(skuArg);
+  if (valid.length === 0) {
+    await message.reply('Please provide at least one valid SKU. Example: `unsubscribe ST8000DM004`');
+    return;
   }
+
+  const results = db.removeSkuSubscriptions(message.author.id, valid);
+  const removedText = results.removed.length > 0
+    ? `✅ Removed subscriptions for ${formatSkuList(results.removed)}`
+    : '';
+  const missingText = results.missing.length > 0
+    ? `⚠️ Not subscribed: ${formatSkuList(results.missing)}`
+    : '';
+  const invalidText = invalid.length > 0
+    ? `❌ Invalid SKUs: ${formatSkuList(invalid)}`
+    : '';
+
+  await message.reply([removedText, missingText, invalidText].filter(Boolean).join('\n'));
 }
 
 async function handleListViaMention(message: Message, db: Database): Promise<void> {
