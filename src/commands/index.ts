@@ -9,7 +9,7 @@ import { createAlertCommand } from './alert.js';
 export function loadCommands(db: Database): Command[] {
   return [
     createStatusCommand(db),
-    createDealsCommand(),
+    createDealsCommand(db),
     createHistoryCommand(),
     createConfigCommand(db),
     createAlertCommand(db),

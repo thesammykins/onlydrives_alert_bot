@@ -1,9 +1,10 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import type { Command } from '../bot.js';
+import type { Database } from '../services/database.js';
 import { OnlyDrivesApi } from '../services/api.js';
 
-export function createDealsCommand(): Command {
+export function createDealsCommand(db: Database): Command {
   const api = new OnlyDrivesApi();
 
   return {
@@ -25,6 +26,40 @@ export function createDealsCommand(): Command {
             { name: 'HDD', value: 'HDD' },
             { name: 'SSD', value: 'SSD' }
           )
+      )
+      .addNumberOption(option =>
+        option
+          .setName('min_price')
+          .setDescription('Minimum total price ($)')
+          .setMinValue(0)
+      )
+      .addNumberOption(option =>
+        option
+          .setName('max_price')
+          .setDescription('Maximum total price ($)')
+          .setMinValue(0)
+      )
+      .addNumberOption(option =>
+        option
+          .setName('min_per_tb')
+          .setDescription('Minimum $/TB')
+          .setMinValue(0)
+      )
+      .addNumberOption(option =>
+        option
+          .setName('max_per_tb')
+          .setDescription('Maximum $/TB')
+          .setMinValue(0)
+      )
+      .addStringOption(option =>
+        option
+          .setName('condition')
+          .setDescription('Filter by condition')
+      )
+      .addStringOption(option =>
+        option
+          .setName('source')
+          .setDescription('Filter by source name')
       ),
 
     async execute(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -33,15 +68,47 @@ export function createDealsCommand(): Command {
       try {
         const count = interaction.options.getInteger('count') ?? 5;
         const typeFilter = interaction.options.getString('type') as 'HDD' | 'SSD' | null;
+        const minPrice = interaction.options.getNumber('min_price');
+        const maxPrice = interaction.options.getNumber('max_price');
+        const minPerTb = interaction.options.getNumber('min_per_tb');
+        const maxPerTb = interaction.options.getNumber('max_per_tb');
+        const conditionFilter = interaction.options.getString('condition')?.toLowerCase() ?? null;
+        const sourceFilter = interaction.options.getString('source')?.toLowerCase() ?? null;
 
-        const products = await api.fetchProducts();
-        
+        let products;
+        let usingCache = false;
+
+        try {
+          products = await api.fetchProducts();
+        } catch {
+          products = db.getCachedProducts();
+          usingCache = true;
+        }
+
         let available = products.filter(p => p.available);
         if (typeFilter) {
           available = available.filter(p => p.type === typeFilter);
         }
+        if (conditionFilter) {
+          available = available.filter(p => p.condition.toLowerCase().includes(conditionFilter));
+        }
+        if (sourceFilter) {
+          available = available.filter(p => p.source.toLowerCase().includes(sourceFilter));
+        }
+        if (minPrice !== null) {
+          available = available.filter(p => parseFloat(p.current_price_total) >= minPrice);
+        }
+        if (maxPrice !== null) {
+          available = available.filter(p => parseFloat(p.current_price_total) <= maxPrice);
+        }
+        if (minPerTb !== null) {
+          available = available.filter(p => parseFloat(p.current_price_per_tb) >= minPerTb);
+        }
+        if (maxPerTb !== null) {
+          available = available.filter(p => parseFloat(p.current_price_per_tb) <= maxPerTb);
+        }
 
-        const sorted = available.sort((a, b) => 
+        const sorted = available.sort((a, b) =>
           parseFloat(a.current_price_per_tb) - parseFloat(b.current_price_per_tb)
         );
 
@@ -52,11 +119,15 @@ export function createDealsCommand(): Command {
           return;
         }
 
+        const footerText = usingCache
+          ? 'OnlyDrives Monitor • ⚠️ Using cached data'
+          : 'OnlyDrives Monitor';
+
         const embed = new EmbedBuilder()
           .setColor(0x00ff00)
           .setTitle(`Top ${topDeals.length} Best $/TB Deals${typeFilter ? ` (${typeFilter})` : ''}`)
           .setTimestamp()
-          .setFooter({ text: 'OnlyDrives Monitor' });
+          .setFooter({ text: footerText });
 
         const description = topDeals.map((p, i) => {
           const pricePerTb = parseFloat(p.current_price_per_tb).toFixed(2);

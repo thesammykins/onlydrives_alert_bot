@@ -1,5 +1,5 @@
 import BetterSqlite3 from 'better-sqlite3';
-import type { ProductState, AlertType, BotSettings, SkuSubscription } from '../types.js';
+import type { Product, ProductState, AlertType, BotSettings, SkuSubscription, UserPreferences } from '../types.js';
 
 export class Database {
   private db: BetterSqlite3.Database;
@@ -45,13 +45,45 @@ export class Database {
         sku TEXT NOT NULL,
         delivery_method TEXT NOT NULL DEFAULT 'dm',
         channel_id TEXT,
+        price_drop_threshold REAL,
+        price_spike_threshold REAL,
         created_at TEXT NOT NULL,
         UNIQUE(user_id, sku)
       );
 
       CREATE INDEX IF NOT EXISTS idx_subscriptions_sku ON sku_subscriptions(sku);
       CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON sku_subscriptions(user_id);
+
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id TEXT PRIMARY KEY,
+        quiet_start_hour INTEGER,
+        quiet_end_hour INTEGER,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS product_cache (
+        product_id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        cached_at TEXT NOT NULL
+      );
     `);
+
+    this.ensureSubscriptionColumns();
+  }
+
+  private ensureSubscriptionColumns(): void {
+    const columns = this.db
+      .prepare('PRAGMA table_info(sku_subscriptions)')
+      .all() as { name: string }[];
+    const columnNames = new Set(columns.map(column => column.name));
+
+    if (!columnNames.has('price_drop_threshold')) {
+      this.db.exec('ALTER TABLE sku_subscriptions ADD COLUMN price_drop_threshold REAL');
+    }
+
+    if (!columnNames.has('price_spike_threshold')) {
+      this.db.exec('ALTER TABLE sku_subscriptions ADD COLUMN price_spike_threshold REAL');
+    }
   }
 
   getConfig(key: string): string | null {
@@ -206,39 +238,101 @@ export class Database {
   }
 
   addSkuSubscription(userId: string, sku: string, deliveryMethod: 'dm' | 'channel', channelId: string | null): boolean {
-    try {
-      const stmt = this.db.prepare(`
-        INSERT INTO sku_subscriptions (user_id, sku, delivery_method, channel_id, created_at)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      stmt.run(userId, sku.toUpperCase(), deliveryMethod, channelId, new Date().toISOString());
-      return true;
-    } catch (error: unknown) {
-      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
-        return false;
+    return this.addSkuSubscriptions(userId, [sku], deliveryMethod, channelId).added.length > 0;
+  }
+
+  addSkuSubscriptions(
+    userId: string,
+    skus: string[],
+    deliveryMethod: 'dm' | 'channel',
+    channelId: string | null,
+    thresholds?: { priceDropThreshold?: number; priceSpikeThreshold?: number }
+  ): { added: string[]; duplicates: string[] } {
+    const insert = this.db.prepare(`
+      INSERT INTO sku_subscriptions (
+        user_id,
+        sku,
+        delivery_method,
+        channel_id,
+        price_drop_threshold,
+        price_spike_threshold,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const now = new Date().toISOString();
+    const added: string[] = [];
+    const duplicates: string[] = [];
+
+    const transaction = this.db.transaction((values: string[]) => {
+      for (const sku of values) {
+        try {
+          insert.run(
+            userId,
+            sku.toUpperCase(),
+            deliveryMethod,
+            channelId,
+            thresholds?.priceDropThreshold ?? null,
+            thresholds?.priceSpikeThreshold ?? null,
+            now
+          );
+          added.push(sku.toUpperCase());
+        } catch (error: unknown) {
+          if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+            duplicates.push(sku.toUpperCase());
+          } else {
+            throw error;
+          }
+        }
       }
-      throw error;
-    }
+    });
+
+    transaction(skus);
+
+    return { added, duplicates };
   }
 
   removeSkuSubscription(userId: string, sku: string): boolean {
+    return this.removeSkuSubscriptions(userId, [sku]).removed.length > 0;
+  }
+
+  removeSkuSubscriptions(userId: string, skus: string[]): { removed: string[]; missing: string[] } {
     const stmt = this.db.prepare(`
       DELETE FROM sku_subscriptions WHERE user_id = ? AND sku = ?
     `);
-    const result = stmt.run(userId, sku.toUpperCase());
-    return result.changes > 0;
+
+    const removed: string[] = [];
+    const missing: string[] = [];
+
+    const transaction = this.db.transaction((values: string[]) => {
+      for (const sku of values) {
+        const result = stmt.run(userId, sku.toUpperCase());
+        if (result.changes > 0) {
+          removed.push(sku.toUpperCase());
+        } else {
+          missing.push(sku.toUpperCase());
+        }
+      }
+    });
+
+    transaction(skus);
+
+    return { removed, missing };
   }
 
   getUserSubscriptions(userId: string): SkuSubscription[] {
     const stmt = this.db.prepare(`
-      SELECT id, user_id, sku, delivery_method, channel_id, created_at FROM sku_subscriptions WHERE user_id = ?
+      SELECT id, user_id, sku, delivery_method, channel_id, price_drop_threshold, price_spike_threshold, created_at
+      FROM sku_subscriptions WHERE user_id = ?
     `);
     return stmt.all(userId) as SkuSubscription[];
   }
 
   getSubscribersForSku(sku: string): SkuSubscription[] {
     const stmt = this.db.prepare(`
-      SELECT id, user_id, sku, delivery_method, channel_id, created_at FROM sku_subscriptions WHERE sku = ?
+      SELECT id, user_id, sku, delivery_method, channel_id, price_drop_threshold, price_spike_threshold, created_at
+      FROM sku_subscriptions WHERE sku = ?
     `);
     return stmt.all(sku.toUpperCase()) as SkuSubscription[];
   }
@@ -249,6 +343,50 @@ export class Database {
     `);
     const rows = stmt.all() as { sku: string }[];
     return rows.map(r => r.sku);
+  }
+
+  getUserPreferences(userId: string): UserPreferences | null {
+    const stmt = this.db.prepare(`
+      SELECT user_id, quiet_start_hour, quiet_end_hour, updated_at
+      FROM user_preferences WHERE user_id = ?
+    `);
+    const row = stmt.get(userId) as UserPreferences | undefined;
+    return row ?? null;
+  }
+
+  upsertUserPreferences(userId: string, quietStartHour: number | null, quietEndHour: number | null): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO user_preferences (user_id, quiet_start_hour, quiet_end_hour, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        quiet_start_hour = excluded.quiet_start_hour,
+        quiet_end_hour = excluded.quiet_end_hour,
+        updated_at = excluded.updated_at
+    `);
+    stmt.run(userId, quietStartHour, quietEndHour, new Date().toISOString());
+  }
+
+  upsertCachedProducts(products: Product[]): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO product_cache (product_id, data, cached_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(product_id) DO UPDATE SET
+        data = excluded.data,
+        cached_at = excluded.cached_at
+    `);
+    const now = new Date().toISOString();
+    const transaction = this.db.transaction((items: Product[]) => {
+      for (const product of items) {
+        stmt.run(product.id, JSON.stringify(product), now);
+      }
+    });
+    transaction(products);
+  }
+
+  getCachedProducts(): Product[] {
+    const stmt = this.db.prepare('SELECT data FROM product_cache');
+    const rows = stmt.all() as { data: string }[];
+    return rows.map(r => JSON.parse(r.data) as Product);
   }
 
   close(): void {

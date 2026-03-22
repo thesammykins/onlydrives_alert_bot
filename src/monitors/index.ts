@@ -58,6 +58,7 @@ export class MonitorOrchestrator {
     try {
       const products = await this.api.fetchProducts();
       console.log(`[Monitor] Fetched ${products.length} products`);
+      this.db.upsertCachedProducts(products);
 
       const isFirstRun = !this.db.isInitialSyncComplete();
       if (isFirstRun) {

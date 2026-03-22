@@ -50,3 +50,6 @@ Thumbs.db
 
 # OpenCode
 .opencode/
+
+# Local Docker override
+docker-compose.override.yml
