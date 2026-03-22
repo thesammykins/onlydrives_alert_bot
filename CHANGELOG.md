@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.3.0...onlydrives-alert-bot-v1.3.1) (2026-03-22)
+
+
+### Bug Fixes
+
+* replace cached product snapshot on refresh ([150cf92](https://github.com/thesammykins/onlydrives_alert_bot/commit/150cf920274b62144b7dd17ec90b5ed76c7f0463))
+
 ## [1.3.0](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.2.0...onlydrives-alert-bot-v1.3.0) (2026-03-22)
 
 
