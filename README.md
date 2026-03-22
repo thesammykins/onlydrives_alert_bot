@@ -51,10 +51,9 @@ Still in the **Bot** tab:
 
 1. Scroll down to **Privileged Gateway Intents**
    - Enable **Message Content Intent** (required for @mention commands)
-2. Under **Bot Permissions**, the bot needs:
-   - `Send Messages`
-   - `Embed Links`
-   - `Use Slash Commands`
+ 2. Under **Bot Permissions**, the bot needs:
+    - `Send Messages`
+    - `Embed Links`
 
 ### 4. Generate an Invite Link
 
@@ -110,18 +109,24 @@ To get the IDs needed for configuration:
    ```
 
 4. Deploy slash commands (one-time setup):
-   ```bash
-   docker compose run --rm bot npm run deploy-commands
-   ```
+    ```bash
+    docker compose run --rm bot npm run deploy-commands
+    ```
 
 5. Start the bot:
+    ```bash
+    docker compose up -d
+    ```
+
+   This uses the released GHCR image from `docker-compose.yml`. For local branch changes, use `docker-compose.override.yml` by rebuilding locally:
    ```bash
+   docker compose build
    docker compose up -d
    ```
 
 6. View logs:
-   ```bash
-   docker compose logs -f
+    ```bash
+    docker compose logs -f
    ```
 
 ### Option 2: Local Installation
@@ -203,11 +208,17 @@ Shows bot status including:
 
 ### `/deals`
 Lists current best $/TB deals with optional filters:
-- `--type HDD|SSD` - Filter by drive type
-- `--min-tb N` - Minimum capacity in TB
+- `count` - Number of deals to show (default: 5)
+- `type` - Filter by drive type (`HDD` or `SSD`)
+- `min_price` / `max_price` - Filter by total price
+- `min_per_tb` / `max_per_tb` - Filter by price per TB
+- `condition` - Filter by condition text
+- `source` - Filter by source/store name
 
 ### `/history <sku>`
-Shows price history for a specific product SKU.
+Shows price history for a specific product using `source-sku` format, for example `amazon-B0CHGT3XXW`.
+
+The `sku` option supports autocomplete based on current product data.
 
 ### `/config` (Admin Only)
 Configure the bot at runtime. All settings persist across restarts.
@@ -233,32 +244,40 @@ Configure the bot at runtime. All settings persist across restarts.
 Manage personal SKU price alert subscriptions.
 
 **Subcommands:**
-- `/alert add <sku> <delivery> [channel]` - Subscribe to alerts for a SKU
+- `/alert add <skus> <delivery> [price_drop] [price_spike] [channel]` - Subscribe to one or more SKUs
+  - `skus`: comma- or space-separated SKU list
   - `delivery`: "Direct Message" or "In Channel"
-  - `channel`: Required if delivery is "In Channel"
-- `/alert remove <sku>` - Unsubscribe from a SKU
+  - `price_drop` / `price_spike`: optional per-SKU threshold overrides in percent
+  - `channel`: required if delivery is "In Channel"
+- `/alert remove <skus>` - Unsubscribe from one or more SKUs
 - `/alert list` - View your active subscriptions
+- `/alert quiet [start] [end]` - Set or clear quiet hours for personal alerts
+- `/alert test <sku> <type>` - Preview an alert embed for a SKU
 
 **Examples:**
 ```
 /alert add ST8000DM004 dm
+/alert add ST8000DM004,WD80EFAX dm 7 12
 /alert add WD80EFAX channel #drive-alerts
+/alert quiet 22 8
+/alert test ST8000DM004 price_drop
 /alert remove ST8000DM004
 /alert list
 ```
 
 ### @Bot Mention Commands
-You can also manage subscriptions by mentioning the bot:
+You can also manage subscriptions by mentioning the bot. Supported aliases include `subscribe` / `watch` / `alert`, `unsubscribe` / `unwatch` / `remove`, and `list` / `subscriptions`.
 
 ```
 @OnlyDrives subscribe ST8000DM004
-@OnlyDrives subscribe ST8000DM004 channel
+@OnlyDrives watch ST8000DM004 here
+@OnlyDrives alert ST8000DM004,WD80EFAX dm
 @OnlyDrives unsubscribe ST8000DM004
-@OnlyDrives list
+@OnlyDrives subscriptions
 @OnlyDrives help
 ```
 
-Or send the bot a DM with commands (no @mention needed).
+In a server, `channel` or `here` delivers alerts to the current channel. You can also DM the bot directly with the same commands and no mention.
 
 ## Alert Types
 
