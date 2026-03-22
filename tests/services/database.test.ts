@@ -367,6 +367,27 @@ describe('Database', () => {
       expect(cached[0]!.current_price_total).toBe('90.00');
     });
 
+    it('upsertCachedProducts removes products missing from the latest snapshot', () => {
+      const p1 = makeProduct({ id: 'src-SKU-1', sku: 'SKU-1' });
+      const p2 = makeProduct({ id: 'src-SKU-2', sku: 'SKU-2', name: 'Test Drive 2TB' });
+
+      db.upsertCachedProducts([p1, p2]);
+      db.upsertCachedProducts([p2]);
+
+      const cached = db.getCachedProducts();
+      expect(cached).toHaveLength(1);
+      expect(cached[0]!.sku).toBe('SKU-2');
+    });
+
+    it('upsertCachedProducts clears the cache when the latest snapshot is empty', () => {
+      const product = makeProduct();
+
+      db.upsertCachedProducts([product]);
+      db.upsertCachedProducts([]);
+
+      expect(db.getCachedProducts()).toEqual([]);
+    });
+
     it('handles multiple products', () => {
       const p1 = makeProduct({ id: 'src-SKU-1', sku: 'SKU-1' });
       const p2 = makeProduct({ id: 'src-SKU-2', sku: 'SKU-2', name: 'Test Drive 2TB' });

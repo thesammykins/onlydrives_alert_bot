@@ -374,11 +374,23 @@ export class Database {
         data = excluded.data,
         cached_at = excluded.cached_at
     `);
+    const clearStmt = this.db.prepare('DELETE FROM product_cache');
     const now = new Date().toISOString();
     const transaction = this.db.transaction((items: Product[]) => {
       for (const product of items) {
         stmt.run(product.id, JSON.stringify(product), now);
       }
+
+      if (items.length === 0) {
+        clearStmt.run();
+        return;
+      }
+
+      const deleteMissingStmt = this.db.prepare(`
+        DELETE FROM product_cache
+        WHERE product_id NOT IN (${items.map(() => '?').join(', ')})
+      `);
+      deleteMissingStmt.run(...items.map(product => product.id));
     });
     transaction(products);
   }
