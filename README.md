@@ -11,13 +11,13 @@ A Discord bot that monitors drive prices from the OnlyDrives API and alerts user
 - **Back in Stock Alerts**: Notified when products become available again
 - **Personal SKU Alerts**: Subscribe to specific SKUs and receive alerts via DM or in-channel
 - **Slash Commands**:
-  - `/status` - Show bot status and last check time
-  - `/deals` - List current best $/TB deals with optional filters
-  - `/history <sku>` - Show price history for a product
+  - `/status` - Show tracked product counts and the most recent check time
+  - `/deals` - List current best $/TB deals with filters and cached fallback
+  - `/history <source-sku>` - Show price history for a product
   - `/config` - Configure bot settings at runtime (Admin only)
   - `/alert` - Manage personal SKU price alert subscriptions
 - **@Bot Mention Commands**: Subscribe to alerts by mentioning the bot
-- **Runtime Configuration**: All settings can be configured via `/config` command
+- **Runtime Configuration**: Alert routing and monitoring settings can be configured via `/config`
 - **Per-Alert Channels**: Route different alert types to different channels
 - **Alert Toggles**: Enable/disable specific alert types
 - **Silent First Run**: No spam on first startup - products are synced silently
@@ -108,21 +108,18 @@ To get the IDs needed for configuration:
    LOG_LEVEL=info
    ```
 
-4. Deploy slash commands (one-time setup):
-    ```bash
-    docker compose run --rm bot npm run deploy-commands
-    ```
+4. Deploy slash commands once from a local checkout:
+   ```bash
+   npm install
+   npm run deploy-commands
+   ```
 
 5. Start the bot:
-    ```bash
-    docker compose up -d
-    ```
-
-   This uses the released GHCR image from `docker-compose.yml`. For local branch changes, use `docker-compose.override.yml` by rebuilding locally:
    ```bash
-   docker compose build
    docker compose up -d
    ```
+
+   This uses the released GHCR image pinned in `docker-compose.yml`.
 
 6. View logs:
     ```bash
@@ -202,9 +199,9 @@ The following can be configured at runtime via `/config`:
 
 ### `/status`
 Shows bot status including:
-- Last check time
 - Number of products being monitored
-- Next scheduled check
+- Number currently available and unavailable
+- Last check time (when monitoring data exists)
 
 ### `/deals`
 Lists current best $/TB deals with optional filters:
@@ -215,13 +212,15 @@ Lists current best $/TB deals with optional filters:
 - `condition` - Filter by condition text
 - `source` - Filter by source/store name
 
+If the OnlyDrives API is temporarily unavailable, `/deals` falls back to the last cached product snapshot and marks the response footer accordingly.
+
 ### `/history <sku>`
 Shows price history for a specific product using `source-sku` format, for example `amazon-B0CHGT3XXW`.
 
-The `sku` option supports autocomplete based on current product data.
+The `sku` option supports autocomplete based on current product data, with a short in-memory cache to avoid repeated API fetches.
 
 ### `/config` (Admin Only)
-Configure the bot at runtime. All settings persist across restarts.
+Configure the bot at runtime. This command is restricted to administrators, and settings persist across restarts.
 
 **Subcommands:**
 - `/config show` - Display current configuration
@@ -241,7 +240,7 @@ Configure the bot at runtime. All settings persist across restarts.
 ```
 
 ### `/alert`
-Manage personal SKU price alert subscriptions.
+Manage personal SKU price alert subscriptions and preferences.
 
 **Subcommands:**
 - `/alert add <skus> <delivery> [price_drop] [price_spike] [channel]` - Subscribe to one or more SKUs
@@ -251,7 +250,7 @@ Manage personal SKU price alert subscriptions.
   - `channel`: required if delivery is "In Channel"
 - `/alert remove <skus>` - Unsubscribe from one or more SKUs
 - `/alert list` - View your active subscriptions
-- `/alert quiet [start] [end]` - Set or clear quiet hours for personal alerts
+- `/alert quiet [start] [end]` - Set or clear per-user quiet hours for personal alerts
 - `/alert test <sku> <type>` - Preview an alert embed for a SKU
 
 **Examples:**
@@ -303,8 +302,8 @@ docker compose down
 # View logs
 docker compose logs -f
 
-# Rebuild after code changes
-docker compose build
+# Pull the latest pinned release image
+docker compose pull
 docker compose up -d
 
 # Restart
@@ -344,7 +343,7 @@ Full price history is fetched from the OnlyDrives API when needed.
 - If the token was exposed, reset it in the Developer Portal
 
 ### Commands Not Showing
-- Run `npm run deploy-commands` (or via Docker Compose)
+- Run `npm run deploy-commands` from a local checkout
 - Guild commands appear instantly; global commands take up to 1 hour
 - Ensure the bot has `applications.commands` scope
 
