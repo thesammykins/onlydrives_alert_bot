@@ -12,6 +12,10 @@ import { Database } from './database.js';
 
 const SUMMARY_DROP_THRESHOLD = 0.05;
 const SUMMARY_SPIKE_THRESHOLD = 0.10;
+const EMBED_FIELD_VALUE_LIMIT = 1024;
+const EMBED_FIELD_SOFT_LIMIT = 1000;
+const PRODUCT_TITLE_LIMIT = 58;
+const PRODUCT_SKU_LIMIT = 44;
 
 export interface SummaryPeriod {
   start: Date;
@@ -59,30 +63,30 @@ export class SummaryService {
     const dropThreshold = botSettings.priceDropThreshold ?? SUMMARY_DROP_THRESHOLD;
     const spikeThreshold = botSettings.priceSpikeThreshold ?? SUMMARY_SPIKE_THRESHOLD;
 
-    const drops = rows
+    const allDrops = rows
       .filter(row => row.percentChange !== null && row.percentChange <= -dropThreshold)
-      .sort((a, b) => a.percentChange! - b.percentChange!)
-      .slice(0, 5);
-    const spikes = rows
+      .sort((a, b) => a.percentChange! - b.percentChange!);
+    const allSpikes = rows
       .filter(row => row.percentChange !== null && row.percentChange >= spikeThreshold)
-      .sort((a, b) => b.percentChange! - a.percentChange!)
-      .slice(0, 3);
-    const newOrRestocked = rows
+      .sort((a, b) => b.percentChange! - a.percentChange!);
+    const allNewOrRestocked = rows
       .filter(row => row.isNew || row.isRestocked)
-      .sort((a, b) => b.currentTotal - a.currentTotal)
-      .slice(0, 5);
+      .sort((a, b) => b.currentTotal - a.currentTotal);
     const bestValue = rows
       .filter(row => row.product.available && row.normalizedPerTbAud !== null)
       .sort((a, b) => a.normalizedPerTbAud! - b.normalizedPerTbAud!)
       .slice(0, 5);
+    const drops = allDrops.slice(0, 5);
+    const spikes = allSpikes.slice(0, 3);
+    const newOrRestocked = allNewOrRestocked.slice(0, 5);
 
     const embed = new EmbedBuilder()
       .setColor(0x00a3ff)
       .setTitle(`OnlyDrives ${formatSummaryFrequency(settings.frequency)} Summary`)
       .setDescription([
-        `Period: ${period.label}`,
-        `Timezone: ${settings.timezone}`,
+        `${period.label} (${settings.timezone})`,
         formatRateLine(rate),
+        `Signals: ${allDrops.length} drops | ${allSpikes.length} increases | ${allNewOrRestocked.length} new/restocked | ${rows.length} tracked`,
       ].join('\n'))
       .setTimestamp(now)
       .setFooter({ text: 'OnlyDrives Monitor' });
@@ -286,72 +290,211 @@ function calculatePercentChange(
 }
 
 function formatRows(rows: ProductSummaryRow[]): string {
-  const lines = rows.map(row => `- ${formatProductLine(row)}`);
+  const lines = rows.map((row, index) => formatProductRow(row, index + 1));
   const selected: string[] = [];
-  let totalLength = 0;
+  let value = '';
 
   for (const line of lines) {
-    if (totalLength + line.length + 1 > 1000) {
+    const nextValue = value ? `${value}\n\n${line}` : line;
+    if (nextValue.length > EMBED_FIELD_SOFT_LIMIT) {
       break;
     }
 
     selected.push(line);
-    totalLength += line.length + 1;
+    value = nextValue;
+  }
+
+  if (selected.length === 0 && lines[0]) {
+    selected.push(truncateText(lines[0], EMBED_FIELD_SOFT_LIMIT));
   }
 
   if (selected.length < lines.length) {
-    selected.push(`...and ${lines.length - selected.length} more`);
+    const remainingText = `...and ${lines.length - selected.length} more`;
+    const nextValue = selected.length > 0
+      ? `${selected.join('\n\n')}\n\n${remainingText}`
+      : remainingText;
+
+    if (nextValue.length <= EMBED_FIELD_VALUE_LIMIT) {
+      selected.push(remainingText);
+    }
   }
 
-  return selected.join('\n');
+  return truncateText(selected.join('\n\n'), EMBED_FIELD_VALUE_LIMIT);
 }
 
-function formatProductLine(row: ProductSummaryRow): string {
+function formatProductRow(row: ProductSummaryRow, index: number): string {
   const product = row.product;
-  const shortName = product.name.replace(/\s+/g, ' ').slice(0, 56);
-  const stock = product.available ? '' : ' (out of stock)';
-  const status = [
+  const title = formatProductTitle(product);
+  const statusParts = [
+    `\`${escapeInlineCode(truncateMiddle(product.sku, PRODUCT_SKU_LIMIT))}\``,
+    formatCapacity(product.capacity_tb),
+    truncateText(product.condition, 26),
+    formatSourceName(product.source),
+    product.available ? null : 'out of stock',
     row.isNew ? 'new' : null,
     row.isRestocked ? 'restocked' : null,
-  ].filter(Boolean).join(', ');
-  const statusText = status ? `, ${status}` : '';
+  ].filter((part): part is string => Boolean(part));
 
-  return `[${product.sku}](${product.url}) ${shortName} - ${product.capacity_tb}TB ${product.condition} ${product.source}${stock}${statusText} - ${formatPrice(row)} - ${row.trendText}`;
+  return [
+    `**${index}. ${title}**`,
+    statusParts.join(' • '),
+    `${formatPrice(row)} • ${row.trendText}`,
+  ].join('\n');
+}
+
+function formatProductTitle(product: Product): string {
+  let title = normalizeWhitespace(product.name);
+
+  for (const token of getSkuNoiseTokens(product.sku)) {
+    title = title.replace(new RegExp(escapeRegExp(token), 'gi'), ' ');
+  }
+
+  title = title
+    .replace(/\bSATA\s+CMR\b/gi, ' ')
+    .replace(/\bRecertified\s+neology\b/gi, ' ')
+    .replace(/\s+-\s+/g, ' ')
+    .replace(/[|()[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  title = dedupeCapacityText(title);
+
+  if (!title) {
+    title = `${formatSourceName(product.source)} ${formatCapacity(product.capacity_tb)} ${product.type}`;
+  }
+
+  return escapeMarkdownText(truncateText(title, PRODUCT_TITLE_LIMIT));
+}
+
+function getSkuNoiseTokens(sku: string): string[] {
+  const tokens = new Set<string>([sku]);
+  const withoutUsedPrefix = sku.replace(/^U-/i, '');
+  const withoutRecertifiedSuffix = sku.replace(/-R$/i, '');
+  tokens.add(withoutUsedPrefix);
+  tokens.add(withoutRecertifiedSuffix);
+
+  for (const match of sku.matchAll(/[A-Z]{1,5}\d{4,}[A-Z0-9]*/gi)) {
+    tokens.add(match[0]);
+  }
+
+  return [...tokens].filter(token => token.length >= 5);
+}
+
+function dedupeCapacityText(value: string): string {
+  const seen = new Set<string>();
+
+  return value
+    .replace(/\b(\d+(?:\.\d+)?)\s*TB\b/gi, (_match, amountText: string) => {
+      const amount = Number(amountText);
+      if (!Number.isFinite(amount)) {
+        return `${amountText}TB`;
+      }
+
+      const key = amount.toFixed(2);
+      if (seen.has(key)) {
+        return ' ';
+      }
+
+      seen.add(key);
+      return `${formatCompactNumber(amount)}TB`;
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function formatPrice(row: ProductSummaryRow): string {
   if (isEastDigitalProduct(row.product)) {
     if (row.normalizedTotalAud === null || row.normalizedPerTbAud === null) {
-      return `$${row.currentTotal.toFixed(2)} USD, $${row.currentPerTb.toFixed(2)}/TB USD (AUD unavailable)`;
+      return `US$${row.currentTotal.toFixed(2)} • US$${row.currentPerTb.toFixed(2)}/TB • AUD n/a`;
     }
 
-    return `$${row.currentTotal.toFixed(2)} USD (~A$${row.normalizedTotalAud.toFixed(2)}), ` +
-      `$${row.currentPerTb.toFixed(2)}/TB USD (~A$${row.normalizedPerTbAud.toFixed(2)}/TB)`;
+    return `US$${row.currentTotal.toFixed(2)} (~A$${row.normalizedTotalAud.toFixed(2)}) • ` +
+      `US$${row.currentPerTb.toFixed(2)}/TB (~A$${row.normalizedPerTbAud.toFixed(2)}/TB)`;
   }
 
-  return `A$${row.currentTotal.toFixed(2)}, A$${row.currentPerTb.toFixed(2)}/TB`;
+  return `A$${row.currentTotal.toFixed(2)} • A$${row.currentPerTb.toFixed(2)}/TB`;
 }
 
 function formatRateLine(rate: ExchangeRate | null): string {
   if (!rate) {
-    return 'USD -> AUD estimate unavailable';
+    return 'FX: USD -> AUD unavailable';
   }
 
   const staleText = rate.stale ? ', cached fallback' : '';
-  return `USD -> AUD estimate: ${rate.rate.toFixed(4)} (${rate.rateDate}${staleText})`;
+  return `FX: USD -> AUD ${rate.rate.toFixed(4)} (${rate.rateDate}${staleText})`;
 }
 
 function formatTrend(percentChange: number | null, trendLabel: string): string {
   if (percentChange === null) {
-    return `${trendLabel} trend unavailable`;
+    return `${trendLabel} n/a`;
   }
 
   if (Math.abs(percentChange) < 0.001) {
     return `${trendLabel} flat`;
   }
 
-  const sign = percentChange > 0 ? '+' : '';
-  return `${trendLabel} ${sign}${(percentChange * 100).toFixed(1)}%`;
+  const arrow = percentChange > 0 ? '↑' : '↓';
+  return `${arrow} ${Math.abs(percentChange * 100).toFixed(1)}%`;
+}
+
+function formatCapacity(capacityTb: string): string {
+  const parsed = parsePrice(capacityTb);
+  if (parsed <= 0) {
+    return `${capacityTb}TB`;
+  }
+
+  return `${formatCompactNumber(parsed)}TB`;
+}
+
+function formatSourceName(source: string): string {
+  return source
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function formatCompactNumber(value: number): string {
+  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncateText(value: string, limit: number): string {
+  if (value.length <= limit) {
+    return value;
+  }
+
+  if (limit <= 3) {
+    return value.slice(0, limit);
+  }
+
+  return `${value.slice(0, limit - 3).trimEnd()}...`;
+}
+
+function truncateMiddle(value: string, limit: number): string {
+  if (value.length <= limit) {
+    return value;
+  }
+
+  const available = limit - 3;
+  const head = Math.ceil(available / 2);
+  const tail = Math.floor(available / 2);
+  return `${value.slice(0, head)}...${value.slice(value.length - tail)}`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeInlineCode(value: string): string {
+  return value.replace(/`/g, "'");
+}
+
+function escapeMarkdownText(value: string): string {
+  return value.replace(/[*_~`]/g, '');
 }
 
 function formatZonedDateTime(date: Date, timezone: string): string {

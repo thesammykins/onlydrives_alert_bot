@@ -120,6 +120,84 @@ describe('SummaryService', () => {
     expect(fields.find(field => field.name === 'Price Drops')?.value).not.toContain('OLD-SKU');
   });
 
+  it('formats compact trend rows without duplicated SKU noise', async () => {
+    const sku = 'U-ST18000NM000J-1-3M';
+    const products = [
+      createProduct({
+        id: 'drop',
+        sku,
+        name: `${sku} Refurbished Seagate EXOS X18 18TB ${sku} SATA CMR 18.00TB Recertified neology`,
+        source: 'neology',
+        current_price_total: '90.00',
+        current_price_per_tb: '5.00',
+        capacity_tb: '18.00',
+      }),
+    ];
+    const histories = new Map<string, PriceHistoryEntry[]>([
+      [sku, createHistory([
+        ['2026-04-30T00:00:00.000Z', '100.00', '5.56'],
+        ['2026-05-01T00:00:00.000Z', '90.00', '5.00'],
+      ])],
+    ]);
+    const api = {
+      fetchProducts: vi.fn(async () => products),
+      fetchPriceHistory: vi.fn(async (_source: string, productSku: string) => histories.get(productSku) ?? []),
+    };
+    const currency = {
+      getUsdToAudRate: vi.fn(async () => rate),
+      convertUsdToAud: vi.fn((amount: number, exchangeRate: ExchangeRate | null) =>
+        exchangeRate ? amount * exchangeRate.rate : null
+      ),
+    };
+    const service = new SummaryService(db, api as never, currency as never);
+
+    const { embed } = await service.buildSummary(
+      createSettings(),
+      new Date('2026-05-01T00:00:00.000Z')
+    );
+    const dropField = (embed.toJSON().fields ?? []).find(field => field.name === 'Price Drops')?.value ?? '';
+
+    expect(dropField).toContain('**1. Refurbished Seagate EXOS X18 18TB');
+    expect(dropField.match(new RegExp(sku, 'g'))?.length).toBe(1);
+    expect(dropField).toContain('A$90.00 • A$5.00/TB • ↓ 10.0%');
+    expect(dropField.length).toBeLessThanOrEqual(1024);
+  });
+
+  it('keeps all summary field values under Discord limits', async () => {
+    const products = Array.from({ length: 8 }, (_, index) => createProduct({
+      id: `drop-${index}`,
+      sku: `DROP-SKU-${index}`,
+      name: `Very Long Product Name ${index} With Repeated Technical Detail And Extra Capacity Text 18TB SATA CMR Enterprise Recertified`,
+      source: 'east-digital',
+      current_price_total: `${90 + index}.00`,
+      current_price_per_tb: `${5 + index}.00`,
+    }));
+    const history = createHistory([
+      ['2026-04-30T00:00:00.000Z', '120.00', '12.00'],
+      ['2026-05-01T00:00:00.000Z', '90.00', '9.00'],
+    ]);
+    const api = {
+      fetchProducts: vi.fn(async () => products),
+      fetchPriceHistory: vi.fn(async () => history),
+    };
+    const currency = {
+      getUsdToAudRate: vi.fn(async () => rate),
+      convertUsdToAud: vi.fn((amount: number, exchangeRate: ExchangeRate | null) =>
+        exchangeRate ? amount * exchangeRate.rate : null
+      ),
+    };
+    const service = new SummaryService(db, api as never, currency as never);
+
+    const { embed } = await service.buildSummary(
+      createSettings(),
+      new Date('2026-05-01T00:00:00.000Z')
+    );
+
+    for (const field of embed.toJSON().fields ?? []) {
+      expect(field.value.length).toBeLessThanOrEqual(1024);
+    }
+  });
+
   it('falls back to top five normalized AUD per TB products when no notable changes exist', async () => {
     const products = [
       createProduct({

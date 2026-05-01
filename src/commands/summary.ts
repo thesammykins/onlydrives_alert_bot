@@ -20,6 +20,7 @@ type SummaryBuilder = Pick<SummaryService, 'buildSummary'>;
 interface SummaryCommandOptions {
   summaryService?: SummaryBuilder;
   testGuildId?: string;
+  includeManualSend?: boolean;
 }
 
 export function createSummaryCommand(db: Database, options: SummaryCommandOptions = {}): Command {
@@ -76,12 +77,15 @@ export function createSummaryCommand(db: Database, options: SummaryCommandOption
       sub
         .setName('preview')
         .setDescription('Preview the currently configured summary')
-    )
-    .addSubcommand(sub =>
+    );
+
+  if (options.includeManualSend) {
+    data.addSubcommand(sub =>
       sub
         .setName('now')
         .setDescription('Send the configured summary immediately (test guild only)')
     );
+  }
 
   return {
     data,

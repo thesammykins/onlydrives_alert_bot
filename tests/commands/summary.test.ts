@@ -40,6 +40,26 @@ describe('summary command', () => {
     db.close();
   });
 
+  it('omits the test-only now subcommand unless explicitly requested', () => {
+    const command = createSummaryCommand(db, {
+      testGuildId: 'test-guild',
+      includeManualSend: false,
+    });
+    const summaryJson = command.data.toJSON() as { options?: Array<{ name: string }> };
+
+    expect(summaryJson.options?.map(option => option.name)).not.toContain('now');
+  });
+
+  it('includes the test-only now subcommand for test guild registration', () => {
+    const command = createSummaryCommand(db, {
+      testGuildId: 'test-guild',
+      includeManualSend: true,
+    });
+    const summaryJson = command.data.toJSON() as { options?: Array<{ name: string }> };
+
+    expect(summaryJson.options?.map(option => option.name)).toContain('now');
+  });
+
   it('rejects use in DMs', async () => {
     const command = createSummaryCommand(db);
     const interaction = createInteraction({ subcommand: 'status', guildId: null });

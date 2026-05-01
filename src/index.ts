@@ -6,6 +6,7 @@ import { Database } from './services/database.js';
 import { MonitorOrchestrator } from './monitors/index.js';
 import { loadCommands } from './commands/index.js';
 import { SummaryScheduler } from './services/summary-scheduler.js';
+import { GuildCommandRegistrar } from './services/command-registration.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -36,6 +37,9 @@ async function main(): Promise<void> {
   setupMessageHandler(client, db);
   console.log('[Main] Message handler configured');
 
+  const commandRegistrar = new GuildCommandRegistrar(db, config);
+  commandRegistrar.registerGuildCreateHandler(client);
+
   client.once(Events.ClientReady, async (readyClient) => {
     console.log(`[Main] Logged in as ${readyClient.user.tag}`);
 
@@ -44,6 +48,8 @@ async function main(): Promise<void> {
       db.migrateLegacyGlobalConfig(legacyGuildId, config.discord.alertChannelId);
       console.log(`[Main] Migrated legacy server config for guild ${legacyGuildId}`);
     }
+
+    await commandRegistrar.syncJoinedGuilds(readyClient);
 
     const monitor = new MonitorOrchestrator(client, config, db);
     monitor.start();

@@ -8,13 +8,23 @@ import { createConfigCommand } from './config.js';
 import { createAlertCommand } from './alert.js';
 import { createSummaryCommand } from './summary.js';
 
-export function loadCommands(db: Database, config?: Config): Command[] {
+interface LoadCommandOptions {
+  guildId?: string;
+}
+
+export function loadCommands(db: Database, config?: Config, options: LoadCommandOptions = {}): Command[] {
+  const summaryTestGuildId = config?.discord.summaryTestGuildId;
+  const includeManualSend = Boolean(summaryTestGuildId && options.guildId === summaryTestGuildId);
+
   return [
     createStatusCommand(db),
     createDealsCommand(db),
     createHistoryCommand(),
     createConfigCommand(db),
     createAlertCommand(db),
-    createSummaryCommand(db, { testGuildId: config?.discord.summaryTestGuildId }),
+    createSummaryCommand(db, {
+      testGuildId: summaryTestGuildId,
+      includeManualSend,
+    }),
   ];
 }
