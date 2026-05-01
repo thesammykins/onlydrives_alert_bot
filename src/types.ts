@@ -37,6 +37,8 @@ export type AlertType = 'price_drop' | 'price_spike' | 'new_product' | 'back_in_
 
 export type SummaryFrequency = 'daily' | 'weekly' | 'monthly';
 
+export type SummaryLayout = 'compact' | 'detailed';
+
 export interface AlertEvent {
   type: AlertType;
   product: Product;
@@ -80,6 +82,7 @@ export interface BotSettings {
   summaryChannelId: string | null;
   summaryTime: string | null;
   summaryTimezone: string | null;
+  summaryLayout: SummaryLayout;
 }
 
 export interface SummarySettings {
@@ -89,6 +92,7 @@ export interface SummarySettings {
   channelId: string | null;
   time: string | null;
   timezone: string | null;
+  layout: SummaryLayout;
 }
 
 export interface EnabledSummarySettings {
@@ -98,6 +102,7 @@ export interface EnabledSummarySettings {
   channelId: string;
   time: string;
   timezone: string;
+  layout: SummaryLayout;
 }
 
 export interface ExchangeRate {

@@ -9,11 +9,12 @@ import type { Command } from '../bot.js';
 import type { Database } from '../services/database.js';
 import {
   formatSummaryFrequency,
+  formatSummaryLayout,
   isValidSummaryTime,
   isValidTimeZone,
   SummaryService,
 } from '../services/summary.js';
-import type { EnabledSummarySettings, SummaryFrequency } from '../types.js';
+import type { EnabledSummarySettings, SummaryFrequency, SummaryLayout } from '../types.js';
 
 type SummaryBuilder = Pick<SummaryService, 'buildSummary'>;
 
@@ -62,6 +63,15 @@ export function createSummaryCommand(db: Database, options: SummaryCommandOption
             .setDescription('Channel for summaries; defaults to the current channel')
             .addChannelTypes(ChannelType.GuildText)
         )
+        .addStringOption(opt =>
+          opt
+            .setName('layout')
+            .setDescription('Summary layout; compact is the default')
+            .addChoices(
+              { name: 'Compact', value: 'compact' },
+              { name: 'Detailed', value: 'detailed' }
+            )
+        )
     )
     .addSubcommand(sub =>
       sub
@@ -77,6 +87,21 @@ export function createSummaryCommand(db: Database, options: SummaryCommandOption
       sub
         .setName('preview')
         .setDescription('Preview the currently configured summary')
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName('layout')
+        .setDescription('Switch between compact and detailed summary layouts')
+        .addStringOption(opt =>
+          opt
+            .setName('mode')
+            .setDescription('Layout to use for future summaries')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Compact', value: 'compact' },
+              { name: 'Detailed', value: 'detailed' }
+            )
+        )
     );
 
   if (options.includeManualSend) {
@@ -113,6 +138,9 @@ export function createSummaryCommand(db: Database, options: SummaryCommandOption
         case 'preview':
           await handlePreview(interaction, db, summaryService);
           break;
+        case 'layout':
+          await handleLayout(interaction, db);
+          break;
         case 'now':
           await handleNow(interaction, db, summaryService, options.testGuildId);
           break;
@@ -125,6 +153,7 @@ async function handleOn(interaction: ChatInputCommandInteraction, db: Database):
   const frequency = interaction.options.getString('frequency', true) as SummaryFrequency;
   const time = interaction.options.getString('time', true);
   const timezone = interaction.options.getString('timezone', true);
+  const layout = (interaction.options.getString('layout') as SummaryLayout | null) ?? 'compact';
   const channel = interaction.options.getChannel('channel');
   const channelId = channel?.id ?? interaction.channelId;
 
@@ -158,11 +187,12 @@ async function handleOn(interaction: ChatInputCommandInteraction, db: Database):
     channelId,
     time,
     timezone,
+    layout,
   });
 
   const cadence = formatCadence(frequency, time, timezone);
   await interaction.reply({
-    content: `✅ ${formatSummaryFrequency(frequency)} summaries enabled in <#${channelId}>. ${cadence}`,
+    content: `✅ ${formatSummaryFrequency(frequency)} summaries enabled in <#${channelId}>. ${cadence} Layout: ${formatSummaryLayout(layout)}.`,
     flags: MessageFlags.Ephemeral,
   });
 }
@@ -198,7 +228,22 @@ async function handleStatus(interaction: ChatInputCommandInteraction, db: Databa
       `**Summary Status:** ${formatSummaryFrequency(settings.frequency)} summaries enabled`,
       `Channel: <#${settings.channelId}>`,
       formatCadence(settings.frequency, settings.time, settings.timezone),
+      `Layout: ${formatSummaryLayout(settings.layout)}`,
     ].join('\n'),
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+async function handleLayout(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
+  const layout = interaction.options.getString('mode', true) as SummaryLayout;
+  const settings = db.getSummarySettings(interaction.guildId!);
+
+  db.setBotSetting(interaction.guildId!, 'summary_layout', layout);
+
+  await interaction.reply({
+    content: settings.summaryEnabled
+      ? `✅ Summary layout set to ${formatSummaryLayout(layout)}.`
+      : `✅ Summary layout set to ${formatSummaryLayout(layout)}. Summaries are still disabled.`,
     flags: MessageFlags.Ephemeral,
   });
 }
@@ -232,6 +277,7 @@ async function handlePreview(
     channelId: settings.channelId,
     time: settings.time,
     timezone: settings.timezone,
+    layout: settings.layout,
   };
   const { embed } = await summaryService.buildSummary(enabledSettings);
 
@@ -284,6 +330,7 @@ async function handleNow(
     channelId: settings.channelId,
     time: settings.time,
     timezone: settings.timezone,
+    layout: settings.layout,
   };
   const { embed } = await summaryService.buildSummary(enabledSettings);
 

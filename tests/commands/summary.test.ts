@@ -134,6 +134,62 @@ describe('summary command', () => {
     expect(db.getSummarySettings('guild-2').summaryEnabled).toBe(true);
   });
 
+  it('enables summaries with the requested layout', async () => {
+    const command = createSummaryCommand(db);
+    const interaction = createInteraction({
+      subcommand: 'on',
+      strings: {
+        frequency: 'daily',
+        time: '09:00',
+        timezone: 'Australia/Melbourne',
+        layout: 'detailed',
+      },
+    });
+
+    await command.execute(interaction);
+
+    const settings = db.getSummarySettings('guild-1');
+    expect(settings.summaryEnabled).toBe(true);
+    expect(settings.layout).toBe('detailed');
+    expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('Layout: Detailed'),
+    }));
+  });
+
+  it('switches summary layout only for the current guild', async () => {
+    db.setSummarySettings('guild-1', {
+      enabled: true,
+      frequency: 'daily',
+      channelId: 'channel-1',
+      time: '09:00',
+      timezone: 'Australia/Melbourne',
+      layout: 'compact',
+    });
+    db.setSummarySettings('guild-2', {
+      enabled: true,
+      frequency: 'daily',
+      channelId: 'channel-2',
+      time: '09:00',
+      timezone: 'Australia/Melbourne',
+      layout: 'compact',
+    });
+
+    const command = createSummaryCommand(db);
+    const interaction = createInteraction({
+      subcommand: 'layout',
+      guildId: 'guild-1',
+      strings: { mode: 'detailed' },
+    });
+
+    await command.execute(interaction);
+
+    expect(db.getSummarySettings('guild-1').layout).toBe('detailed');
+    expect(db.getSummarySettings('guild-2').layout).toBe('compact');
+    expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('Detailed'),
+    }));
+  });
+
   it('previews the currently stored summary cadence', async () => {
     db.setSummarySettings('guild-1', {
       enabled: true,
@@ -141,6 +197,7 @@ describe('summary command', () => {
       channelId: 'summary-channel',
       time: '09:00',
       timezone: 'Australia/Melbourne',
+      layout: 'detailed',
     });
     const buildSummary = vi.fn(async (settings: EnabledSummarySettings) => ({
       embed: new EmbedBuilder().setTitle(`${settings.frequency} preview`),
@@ -154,6 +211,7 @@ describe('summary command', () => {
       frequency: 'monthly',
       channelId: 'summary-channel',
       timezone: 'Australia/Melbourne',
+      layout: 'detailed',
     }));
     expect(interaction.editReply).toHaveBeenCalled();
   });
@@ -184,6 +242,7 @@ describe('summary command', () => {
       channelId: 'summary-channel',
       time: '09:00',
       timezone: 'Australia/Melbourne',
+      layout: 'detailed',
     });
     const buildSummary = vi.fn(async (settings: EnabledSummarySettings) => ({
       embed: new EmbedBuilder().setTitle(`${settings.frequency} now`),
@@ -200,6 +259,7 @@ describe('summary command', () => {
     expect(buildSummary).toHaveBeenCalledWith(expect.objectContaining({
       frequency: 'weekly',
       guildId: 'test-guild',
+      layout: 'detailed',
     }));
     expect(interaction.editReply).toHaveBeenCalledWith(expect.objectContaining({
       embeds: expect.any(Array),

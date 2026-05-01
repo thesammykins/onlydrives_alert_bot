@@ -10,6 +10,7 @@ function createSettings(overrides: Partial<EnabledSummarySettings> = {}): Enable
     channelId: 'summary-channel',
     time: '09:00',
     timezone: 'Etc/UTC',
+    layout: 'compact',
     ...overrides,
   };
 }

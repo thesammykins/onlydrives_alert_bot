@@ -8,6 +8,7 @@ import type {
   ProductState,
   SkuSubscription,
   SummaryFrequency,
+  SummaryLayout,
   SummaryRun,
   SummarySettings,
   UserPreferences,
@@ -17,6 +18,7 @@ const ALERT_TYPES: AlertType[] = ['price_drop', 'price_spike', 'new_product', 'b
 const DEFAULT_GUILD_ID = '__default__';
 
 const SUMMARY_FREQUENCIES: SummaryFrequency[] = ['daily', 'weekly', 'monthly'];
+const SUMMARY_LAYOUTS: SummaryLayout[] = ['compact', 'detailed'];
 
 export class Database {
   private db: BetterSqlite3.Database;
@@ -286,6 +288,7 @@ export class Database {
   getBotSettings(guildId = DEFAULT_GUILD_ID): BotSettings {
     const config = this.getAllGuildConfig(guildId);
     const summaryFrequency = parseSummaryFrequency(config['summary_frequency']);
+    const summaryLayout = parseSummaryLayout(config['summary_layout']);
 
     return {
       channelPriceDrop: config['channel_price_drop'] ?? null,
@@ -305,6 +308,7 @@ export class Database {
       summaryChannelId: config['summary_channel_id'] ?? null,
       summaryTime: config['summary_time'] ?? null,
       summaryTimezone: config['summary_timezone'] ?? null,
+      summaryLayout,
     };
   }
 
@@ -378,6 +382,7 @@ export class Database {
       channelId: settings.summaryChannelId,
       time: settings.summaryTime,
       timezone: settings.summaryTimezone,
+      layout: settings.summaryLayout,
     };
   }
 
@@ -389,9 +394,11 @@ export class Database {
       channelId: string;
       time: string;
       timezone: string;
+      layout?: SummaryLayout;
     }
   ): void {
     const now = new Date().toISOString();
+    const layout = values.layout ?? parseSummaryLayout(this.getGuildConfig(guildId, 'summary_layout'));
     const stmt = this.db.prepare(`
       INSERT INTO guild_config (guild_id, key, value, updated_at)
       VALUES (?, ?, ?, ?)
@@ -406,6 +413,7 @@ export class Database {
       stmt.run(guildId, 'summary_channel_id', values.channelId, now);
       stmt.run(guildId, 'summary_time', values.time, now);
       stmt.run(guildId, 'summary_timezone', values.timezone, now);
+      stmt.run(guildId, 'summary_layout', layout, now);
     });
 
     transaction();
@@ -442,6 +450,7 @@ export class Database {
         channelId: settings.channelId,
         time: settings.time,
         timezone: settings.timezone,
+        layout: settings.layout,
       }];
     });
   }
@@ -820,6 +829,10 @@ function parseSummaryFrequency(value: string | undefined): SummaryFrequency | nu
   }
 
   return SUMMARY_FREQUENCIES.includes(value as SummaryFrequency) ? value as SummaryFrequency : null;
+}
+
+function parseSummaryLayout(value: string | undefined | null): SummaryLayout {
+  return SUMMARY_LAYOUTS.includes(value as SummaryLayout) ? value as SummaryLayout : 'compact';
 }
 
 function getAlertChannelId(settings: BotSettings, alertType: AlertType): string | null {

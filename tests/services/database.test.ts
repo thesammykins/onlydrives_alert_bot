@@ -259,6 +259,7 @@ describe('Database', () => {
       expect(settings.priceDropThreshold).toBeNull();
       expect(settings.pollIntervalMs).toBeNull();
       expect(settings.summaryEnabled).toBe(false);
+      expect(settings.summaryLayout).toBe('compact');
     });
 
     it('returns configured values', () => {
@@ -271,6 +272,7 @@ describe('Database', () => {
       db.setGuildConfig('guild-1', 'summary_channel_id', 'summary-channel');
       db.setGuildConfig('guild-1', 'summary_time', '09:00');
       db.setGuildConfig('guild-1', 'summary_timezone', 'Australia/Melbourne');
+      db.setGuildConfig('guild-1', 'summary_layout', 'detailed');
 
       const settings = db.getBotSettings('guild-1');
 
@@ -281,6 +283,7 @@ describe('Database', () => {
       expect(settings.summaryEnabled).toBe(true);
       expect(settings.summaryFrequency).toBe('weekly');
       expect(settings.summaryChannelId).toBe('summary-channel');
+      expect(settings.summaryLayout).toBe('detailed');
     });
   });
 
@@ -337,6 +340,7 @@ describe('Database', () => {
         channelId: 'summary-channel',
         time: '09:00',
         timezone: 'Australia/Melbourne',
+        layout: 'detailed',
       });
 
       const settings = db.getSummarySettings('guild-1');
@@ -345,8 +349,10 @@ describe('Database', () => {
       expect(settings.summaryEnabled).toBe(true);
       expect(settings.frequency).toBe('daily');
       expect(settings.channelId).toBe('summary-channel');
+      expect(settings.layout).toBe('detailed');
       expect(enabled).toHaveLength(1);
       expect(enabled[0]!.guildId).toBe('guild-1');
+      expect(enabled[0]!.layout).toBe('detailed');
     });
 
     it('disables summaries without removing the stored cadence', () => {

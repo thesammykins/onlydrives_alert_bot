@@ -48,6 +48,7 @@ function createSettings(overrides: Partial<EnabledSummarySettings> = {}): Enable
     channelId: 'summary-channel',
     time: '09:00',
     timezone: 'Etc/UTC',
+    layout: 'compact',
     ...overrides,
   };
 }
@@ -78,9 +79,9 @@ describe('SummaryService', () => {
 
   it('shows best value now and better-value moves only from the current summary window', async () => {
     const products = [
-      createProduct({ id: 'drop', sku: 'DROP-SKU', current_price_total: '90.00', current_price_per_tb: '9.00' }),
-      createProduct({ id: 'spike', sku: 'SPIKE-SKU', current_price_total: '120.00', current_price_per_tb: '12.00' }),
-      createProduct({ id: 'old', sku: 'OLD-SKU', current_price_total: '80.00', current_price_per_tb: '8.00' }),
+      createProduct({ id: 'drop', sku: 'DROP-SKU', name: 'Drop Drive 10TB', current_price_total: '90.00', current_price_per_tb: '9.00' }),
+      createProduct({ id: 'spike', sku: 'SPIKE-SKU', name: 'Spike Drive 10TB', current_price_total: '120.00', current_price_per_tb: '12.00' }),
+      createProduct({ id: 'old', sku: 'OLD-SKU', name: 'Old Drive 10TB', current_price_total: '80.00', current_price_per_tb: '8.00' }),
     ];
     const histories = new Map<string, PriceHistoryEntry[]>([
       ['DROP-SKU', createHistory([
@@ -114,16 +115,18 @@ describe('SummaryService', () => {
       new Date('2026-05-01T00:00:00.000Z')
     );
     const fields = embed.toJSON().fields ?? [];
-    const bestValue = fields.find(field => field.name === '🏆 Best $/TB Right Now (Top 5)')?.value ?? '';
+    const bestValue = fields.find(field => field.name === '🏆 Best Value Now')?.value ?? '';
     const betterValue = fields.find(field => field.name === '📉 Better Value Than Yesterday')?.value ?? '';
+    const compactBetterValue = fields.find(field => field.name === '📉 Better Than Yesterday')?.value ?? '';
 
     expect(embed.toJSON().title).toContain('💾');
     expect(embed.toJSON().description).toContain('📦');
-    expect(bestValue).toContain('DROP-SKU');
-    expect(bestValue).toContain('SPIKE-SKU');
-    expect(betterValue).toContain('DROP-SKU');
-    expect(betterValue).not.toContain('SPIKE-SKU');
-    expect(betterValue).not.toContain('OLD-SKU');
+    expect(bestValue).toContain('🏷️');
+    expect(compactBetterValue).toContain('📉');
+    expect(compactBetterValue).toContain('Drop Drive 10TB');
+    expect(compactBetterValue).not.toContain('Spike Drive 10TB');
+    expect(compactBetterValue).not.toContain('Old Drive 10TB');
+    expect(betterValue).toBe('');
   });
 
   it('formats compact trend rows without duplicated SKU noise', async () => {
@@ -162,12 +165,12 @@ describe('SummaryService', () => {
       new Date('2026-05-01T00:00:00.000Z')
     );
     const betterValue = (embed.toJSON().fields ?? [])
-      .find(field => field.name === '📉 Better Value Than Yesterday')?.value ?? '';
+      .find(field => field.name === '📉 Better Than Yesterday')?.value ?? '';
 
     expect(betterValue).toContain('**1. [Refurbished Seagate EXOS X18 18TB');
     expect(betterValue).toContain('](https://example.test/drive)');
-    expect(betterValue.match(new RegExp(sku, 'g'))?.length).toBe(1);
-    expect(betterValue).toContain('📉 A$5.00/TB');
+    expect(betterValue).not.toContain(sku);
+    expect(betterValue).toContain('📉 now A$5.00/TB');
     expect(betterValue).toContain('save A$0.56/TB');
     expect(betterValue).toContain('↘️');
     expect(betterValue.length).toBeLessThanOrEqual(1024);
@@ -213,6 +216,7 @@ describe('SummaryService', () => {
       createProduct({
         id: 'east-digital',
         sku: 'ED-SKU',
+        name: 'East Digital Drive 10TB',
         source: 'east-digital',
         current_price_total: '100.00',
         current_price_per_tb: '10.00',
@@ -220,6 +224,7 @@ describe('SummaryService', () => {
       createProduct({
         id: 'local',
         sku: 'AUS-SKU',
+        name: 'Australian Store Drive 10TB',
         source: 'local-store',
         current_price_total: '120.00',
         current_price_per_tb: '12.00',
@@ -246,11 +251,54 @@ describe('SummaryService', () => {
       new Date('2026-05-01T00:00:00.000Z')
     );
     const bestValue = (embed.toJSON().fields ?? [])
-      .find(field => field.name === '🏆 Best $/TB Right Now (Top 5)')?.value ?? '';
+      .find(field => field.name === '🏆 Best Value Now')?.value ?? '';
 
-    expect(bestValue).toContain('AUS-SKU');
-    expect(bestValue).toContain('ED-SKU');
-    expect(bestValue.indexOf('AUS-SKU')).toBeLessThan(bestValue.indexOf('ED-SKU'));
+    expect(bestValue).toContain('Australian Store Drive 10TB');
+    expect(bestValue).toContain('East Digital Drive 10TB');
+    expect(bestValue.indexOf('Australian Store Drive 10TB')).toBeLessThan(bestValue.indexOf('East Digital Drive 10TB'));
     expect(bestValue).toContain('~A$15.00/TB');
+    expect(bestValue).not.toContain('US$10.00');
+  });
+
+  it('uses the detailed layout when configured', async () => {
+    const products = [
+      createProduct({ id: 'one', sku: 'ONE-SKU', current_price_total: '90.00', current_price_per_tb: '9.00' }),
+      createProduct({ id: 'two', sku: 'TWO-SKU', current_price_total: '120.00', current_price_per_tb: '12.00' }),
+    ];
+    const histories = new Map<string, PriceHistoryEntry[]>([
+      ['ONE-SKU', createHistory([
+        ['2026-04-30T00:00:00.000Z', '100.00', '10.00'],
+        ['2026-05-01T00:00:00.000Z', '90.00', '9.00'],
+      ])],
+      ['TWO-SKU', createHistory([
+        ['2026-04-30T00:00:00.000Z', '120.00', '12.00'],
+        ['2026-05-01T00:00:00.000Z', '120.00', '12.00'],
+      ])],
+    ]);
+    const api = {
+      fetchProducts: vi.fn(async () => products),
+      fetchPriceHistory: vi.fn(async (_source: string, sku: string) => histories.get(sku) ?? []),
+    };
+    const currency = {
+      getUsdToAudRate: vi.fn(async () => rate),
+      convertUsdToAud: vi.fn((amount: number, exchangeRate: ExchangeRate | null) =>
+        exchangeRate ? amount * exchangeRate.rate : null
+      ),
+    };
+    const service = new SummaryService(db, api as never, currency as never);
+
+    const { embed } = await service.buildSummary(
+      createSettings({ layout: 'detailed' }),
+      new Date('2026-05-01T00:00:00.000Z')
+    );
+    const fields = embed.toJSON().fields ?? [];
+    const bestValue = fields.find(field => field.name === '🏆 Best $/TB Right Now (Top 5)')?.value ?? '';
+    const betterValue = fields.find(field => field.name === '📉 Better Value Than Yesterday')?.value ?? '';
+
+    expect(embed.toJSON().description).toContain('Detailed');
+    expect(bestValue).toContain('ONE-SKU');
+    expect(bestValue).toContain('TWO-SKU');
+    expect(bestValue).toContain('US$9.00');
+    expect(betterValue).toContain('save A$1.50/TB');
   });
 });

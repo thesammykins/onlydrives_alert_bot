@@ -5,6 +5,7 @@ import type {
   PriceHistoryEntry,
   Product,
   SummaryFrequency,
+  SummaryLayout,
 } from '../types.js';
 import { OnlyDrivesApi } from './api.js';
 import { CurrencyService } from './currency.js';
@@ -55,15 +56,15 @@ export class SummaryService {
     period: SummaryPeriod;
   }> {
     const period = getSummaryPeriod(settings.frequency, settings.timezone, now);
+    const isCompact = settings.layout === 'compact';
     const rate = await this.currency.getUsdToAudRate();
     const products = await this.fetchProducts();
     const rows = await this.buildRows(settings.guildId, products, period, rate);
     const availableRows = rows.filter(row => row.product.available);
-    const bestValue = availableRows
+    const allBestValue = availableRows
       .filter(row => row.product.available && row.normalizedPerTbAud !== null)
-      .sort((a, b) => a.normalizedPerTbAud! - b.normalizedPerTbAud!)
-      .slice(0, 5);
-    const betterValue = availableRows
+      .sort((a, b) => a.normalizedPerTbAud! - b.normalizedPerTbAud!);
+    const allBetterValue = availableRows
       .filter(row => row.perTbSavingsAud !== null && row.perTbSavingsAud > 0)
       .sort((a, b) => {
         const savingsDifference = b.perTbSavingsAud! - a.perTbSavingsAud!;
@@ -71,15 +72,17 @@ export class SummaryService {
           ? a.normalizedPerTbAud! - b.normalizedPerTbAud!
           : savingsDifference;
       });
+    const bestValue = allBestValue.slice(0, 5);
+    const betterValue = allBetterValue.slice(0, isCompact ? 5 : allBetterValue.length);
 
     const embed = new EmbedBuilder()
       .setColor(0x00a3ff)
-      .setTitle(`💾 OnlyDrives ${formatSummaryFrequency(settings.frequency)} Value Digest`)
+      .setTitle(`💾 OnlyDrives ${formatSummaryFrequency(settings.frequency)} ${isCompact ? 'Summary' : 'Value Digest'}`)
       .setDescription([
         `🗓️ ${period.label}`,
         `🌏 ${settings.timezone}`,
         formatRateLine(rate),
-        `📦 ${availableRows.length}/${rows.length} available • 📉 ${betterValue.length} better-value moves`,
+        `📦 ${availableRows.length}/${rows.length} available • 📉 ${allBetterValue.length} better-value moves • ${formatSummaryLayout(settings.layout)}`,
       ].join('\n'))
       .setTimestamp(now)
       .setFooter({ text: 'OnlyDrives Monitor' });
@@ -89,18 +92,34 @@ export class SummaryService {
       return { embed, period };
     }
 
-    embed.addFields({
-      name: '🏆 Best $/TB Right Now (Top 5)',
-      value: bestValue.length > 0
-        ? formatRows(bestValue, formatBestValueRow)
-        : 'No available products with comparable $/TB pricing.',
-    });
-
-    if (betterValue.length > 0) {
+    if (isCompact) {
       embed.addFields({
-        name: formatBetterValueFieldName(settings.frequency),
-        value: formatRows(betterValue, formatBetterValueRow),
+        name: '🏆 Best Value Now',
+        value: bestValue.length > 0
+          ? formatRows(bestValue, formatCompactBestValueRow)
+          : 'No available products with comparable $/TB pricing.',
       });
+
+      embed.addFields({
+        name: formatCompactBetterValueFieldName(settings.frequency),
+        value: betterValue.length > 0
+          ? formatRows(betterValue, formatCompactBetterValueRow)
+          : 'No better-value moves in this summary window.',
+      });
+    } else {
+      embed.addFields({
+        name: '🏆 Best $/TB Right Now (Top 5)',
+        value: bestValue.length > 0
+          ? formatRows(bestValue, formatDetailedBestValueRow)
+          : 'No available products with comparable $/TB pricing.',
+      });
+
+      if (betterValue.length > 0) {
+        embed.addFields({
+          name: formatDetailedBetterValueFieldName(settings.frequency),
+          value: formatRows(betterValue, formatDetailedBetterValueRow),
+        });
+      }
     }
 
     return { embed, period };
@@ -217,6 +236,10 @@ export function getSummaryPeriod(frequency: SummaryFrequency, timezone: string, 
 
 export function formatSummaryFrequency(frequency: SummaryFrequency): string {
   return frequency.charAt(0).toUpperCase() + frequency.slice(1);
+}
+
+export function formatSummaryLayout(layout: SummaryLayout): string {
+  return layout.charAt(0).toUpperCase() + layout.slice(1);
 }
 
 export function getZonedParts(date: Date, timezone: string): {
@@ -339,7 +362,30 @@ function formatRows(
   return truncateText(selected.join('\n\n'), EMBED_FIELD_VALUE_LIMIT);
 }
 
-function formatBestValueRow(row: ProductSummaryRow, index: number): string {
+function formatCompactBestValueRow(row: ProductSummaryRow, index: number): string {
+  const product = row.product;
+
+  return [
+    `**${index}. ${formatProductLink(product, 46)}**`,
+    `🏷️ ${formatCompactCurrentPerTb(row)} • ${formatCompactCurrentTotal(row)}${formatCompactTrend(row)}`,
+    `${formatCapacity(product.capacity_tb)} • ${formatSourceName(product.source)} • ${truncateText(product.condition, 18)}`,
+  ].join('\n');
+}
+
+function formatCompactBetterValueRow(row: ProductSummaryRow, index: number): string {
+  const product = row.product;
+  const savings = row.perTbSavingsAud === null
+    ? ''
+    : ` • save A$${row.perTbSavingsAud.toFixed(2)}/TB`;
+
+  return [
+    `**${index}. ${formatProductLink(product, 46)}**`,
+    `📉 now ${formatCompactCurrentPerTb(row)}${savings}${formatCompactTrend(row)}`,
+    `${formatCapacity(product.capacity_tb)} • ${formatSourceName(product.source)} • ${truncateText(product.condition, 18)}`,
+  ].join('\n');
+}
+
+function formatDetailedBestValueRow(row: ProductSummaryRow, index: number): string {
   const product = row.product;
 
   return [
@@ -349,7 +395,7 @@ function formatBestValueRow(row: ProductSummaryRow, index: number): string {
   ].join('\n');
 }
 
-function formatBetterValueRow(row: ProductSummaryRow, index: number): string {
+function formatDetailedBetterValueRow(row: ProductSummaryRow, index: number): string {
   const product = row.product;
   const previousPerTb = row.previousPerTbAud === null
     ? 'previous n/a'
@@ -365,8 +411,8 @@ function formatBetterValueRow(row: ProductSummaryRow, index: number): string {
   ].join('\n');
 }
 
-function formatProductLink(product: Product): string {
-  return `[${formatProductTitle(product)}](${escapeMarkdownUrl(product.url)})`;
+function formatProductLink(product: Product, titleLimit = PRODUCT_TITLE_LIMIT): string {
+  return `[${formatProductTitle(product, titleLimit)}](${escapeMarkdownUrl(product.url)})`;
 }
 
 function formatProductMeta(row: ProductSummaryRow): string {
@@ -384,7 +430,7 @@ function formatProductMeta(row: ProductSummaryRow): string {
   return statusParts.join(' • ');
 }
 
-function formatProductTitle(product: Product): string {
+function formatProductTitle(product: Product, titleLimit = PRODUCT_TITLE_LIMIT): string {
   let title = normalizeWhitespace(product.name);
 
   for (const token of getSkuNoiseTokens(product.sku)) {
@@ -405,7 +451,7 @@ function formatProductTitle(product: Product): string {
     title = `${formatSourceName(product.source)} ${formatCapacity(product.capacity_tb)} ${product.type}`;
   }
 
-  return escapeMarkdownText(truncateText(title, PRODUCT_TITLE_LIMIT));
+  return escapeMarkdownText(truncateText(title, titleLimit));
 }
 
 function getSkuNoiseTokens(sku: string): string[] {
@@ -468,6 +514,30 @@ function formatCurrentTotal(row: ProductSummaryRow): string {
   return `A$${row.currentTotal.toFixed(2)} total`;
 }
 
+function formatCompactCurrentPerTb(row: ProductSummaryRow): string {
+  if (isEastDigitalProduct(row.product)) {
+    if (row.normalizedPerTbAud === null) {
+      return `US$${row.currentPerTb.toFixed(2)}/TB`;
+    }
+
+    return `~A$${row.normalizedPerTbAud.toFixed(2)}/TB`;
+  }
+
+  return `A$${row.currentPerTb.toFixed(2)}/TB`;
+}
+
+function formatCompactCurrentTotal(row: ProductSummaryRow): string {
+  if (isEastDigitalProduct(row.product)) {
+    if (row.normalizedTotalAud === null) {
+      return `US$${row.currentTotal.toFixed(2)}`;
+    }
+
+    return `~A$${row.normalizedTotalAud.toFixed(0)}`;
+  }
+
+  return `A$${row.currentTotal.toFixed(0)}`;
+}
+
 function formatRateLine(rate: ExchangeRate | null): string {
   if (!rate) {
     return '💱 USD -> AUD unavailable';
@@ -490,7 +560,19 @@ function formatCompactTrend(row: ProductSummaryRow): string {
   return ` • ${arrow} ${Math.abs(row.perTbPercentChange * 100).toFixed(1)}%`;
 }
 
-function formatBetterValueFieldName(frequency: SummaryFrequency): string {
+function formatCompactBetterValueFieldName(frequency: SummaryFrequency): string {
+  if (frequency === 'weekly') {
+    return '📉 Better This Week';
+  }
+
+  if (frequency === 'monthly') {
+    return '📉 Better This Month';
+  }
+
+  return '📉 Better Than Yesterday';
+}
+
+function formatDetailedBetterValueFieldName(frequency: SummaryFrequency): string {
   if (frequency === 'weekly') {
     return '📉 Better Value This Week';
   }
