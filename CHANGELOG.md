@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.4](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.3...onlydrives-alert-bot-v1.4.4) (2026-05-01)
+
+
+### Features
+
+* add image summary layout with PNG digest cards
+
+
+### Bug Fixes
+
+* send summary attachments through preview, manual, and scheduled summary paths
+
 ## [1.4.3](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.2...onlydrives-alert-bot-v1.4.3) (2026-05-01)
 
 
