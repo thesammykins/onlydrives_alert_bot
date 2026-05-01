@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.3.1...onlydrives-alert-bot-v1.4.0) (2026-05-01)
+
+
+### Features
+
+* add guild-scoped summary digests with estimated AUD pricing
+* add test-gated `/summary now` manual summary output
+
 ## [1.3.1](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.3.0...onlydrives-alert-bot-v1.3.1) (2026-03-22)
 
 
