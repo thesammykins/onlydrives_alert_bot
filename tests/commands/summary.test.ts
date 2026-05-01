@@ -60,6 +60,29 @@ describe('summary command', () => {
     expect(summaryJson.options?.map(option => option.name)).toContain('now');
   });
 
+  it('includes image as a selectable summary layout', () => {
+    const command = createSummaryCommand(db);
+    const summaryJson = command.data.toJSON() as {
+      options?: Array<{
+        name: string;
+        options?: Array<{
+          name: string;
+          choices?: Array<{ value: string }>;
+        }>;
+      }>;
+    };
+
+    const onLayout = summaryJson.options
+      ?.find(option => option.name === 'on')
+      ?.options?.find(option => option.name === 'layout');
+    const layoutMode = summaryJson.options
+      ?.find(option => option.name === 'layout')
+      ?.options?.find(option => option.name === 'mode');
+
+    expect(onLayout?.choices?.map(choice => choice.value)).toContain('image');
+    expect(layoutMode?.choices?.map(choice => choice.value)).toContain('image');
+  });
+
   it('rejects use in DMs', async () => {
     const command = createSummaryCommand(db);
     const interaction = createInteraction({ subcommand: 'status', guildId: null });
@@ -142,7 +165,7 @@ describe('summary command', () => {
         frequency: 'daily',
         time: '09:00',
         timezone: 'Australia/Melbourne',
-        layout: 'detailed',
+        layout: 'image',
       },
     });
 
@@ -150,9 +173,9 @@ describe('summary command', () => {
 
     const settings = db.getSummarySettings('guild-1');
     expect(settings.summaryEnabled).toBe(true);
-    expect(settings.layout).toBe('detailed');
+    expect(settings.layout).toBe('image');
     expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({
-      content: expect.stringContaining('Layout: Detailed'),
+      content: expect.stringContaining('Layout: Image'),
     }));
   });
 

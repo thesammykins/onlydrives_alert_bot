@@ -37,7 +37,7 @@ export type AlertType = 'price_drop' | 'price_spike' | 'new_product' | 'back_in_
 
 export type SummaryFrequency = 'daily' | 'weekly' | 'monthly';
 
-export type SummaryLayout = 'compact' | 'detailed';
+export type SummaryLayout = 'compact' | 'detailed' | 'image';
 
 export interface AlertEvent {
   type: AlertType;

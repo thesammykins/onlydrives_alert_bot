@@ -61,8 +61,8 @@ export class SummaryScheduler {
         continue;
       }
 
-      const { embed } = await this.summaryService.buildSummary(setting, now);
-      const message = await channel.send({ embeds: [embed] });
+      const { embed, files } = await this.summaryService.buildSummary(setting, now);
+      const message = await channel.send({ embeds: [embed], files });
       const recorded = this.db.recordSummaryRun({
         guildId: setting.guildId,
         frequency: setting.frequency,

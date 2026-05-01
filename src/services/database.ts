@@ -18,7 +18,7 @@ const ALERT_TYPES: AlertType[] = ['price_drop', 'price_spike', 'new_product', 'b
 const DEFAULT_GUILD_ID = '__default__';
 
 const SUMMARY_FREQUENCIES: SummaryFrequency[] = ['daily', 'weekly', 'monthly'];
-const SUMMARY_LAYOUTS: SummaryLayout[] = ['compact', 'detailed'];
+const SUMMARY_LAYOUTS: SummaryLayout[] = ['compact', 'detailed', 'image'];
 
 export class Database {
   private db: BetterSqlite3.Database;

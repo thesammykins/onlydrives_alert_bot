@@ -1,4 +1,5 @@
-import { EmbedBuilder } from 'discord.js';
+import { AttachmentBuilder, EmbedBuilder } from 'discord.js';
+import { Resvg } from '@resvg/resvg-js';
 import type {
   EnabledSummarySettings,
   ExchangeRate,
@@ -15,6 +16,8 @@ const EMBED_FIELD_VALUE_LIMIT = 1024;
 const EMBED_FIELD_SOFT_LIMIT = 1000;
 const PRODUCT_TITLE_LIMIT = 58;
 const PRODUCT_SKU_LIMIT = 44;
+const IMAGE_SUMMARY_WIDTH = 1200;
+const IMAGE_SUMMARY_FILENAME = 'onlydrives-summary.png';
 
 export interface SummaryPeriod {
   start: Date;
@@ -54,9 +57,11 @@ export class SummaryService {
   async buildSummary(settings: EnabledSummarySettings, now = new Date()): Promise<{
     embed: EmbedBuilder;
     period: SummaryPeriod;
+    files?: AttachmentBuilder[];
   }> {
     const period = getSummaryPeriod(settings.frequency, settings.timezone, now);
     const isCompact = settings.layout === 'compact';
+    const isImage = settings.layout === 'image';
     const rate = await this.currency.getUsdToAudRate();
     const products = await this.fetchProducts();
     const rows = await this.buildRows(settings.guildId, products, period, rate);
@@ -90,6 +95,34 @@ export class SummaryService {
     if (rows.length === 0) {
       embed.addFields({ name: 'No Product Data', value: 'No products are available for this summary window.' });
       return { embed, period };
+    }
+
+    if (isImage) {
+      const png = renderSummaryImage({
+        frequency: settings.frequency,
+        periodLabel: period.label,
+        timezone: settings.timezone,
+        rate,
+        availableCount: availableRows.length,
+        totalCount: rows.length,
+        betterValueCount: allBetterValue.length,
+        bestValue,
+        betterValue,
+      });
+      const attachment = new AttachmentBuilder(png, {
+        name: IMAGE_SUMMARY_FILENAME,
+        description: 'OnlyDrives product summary image',
+      });
+
+      embed
+        .setTitle(`💾 OnlyDrives ${formatSummaryFrequency(settings.frequency)} Image Summary`)
+        .setImage(`attachment://${IMAGE_SUMMARY_FILENAME}`)
+        .addFields({
+          name: '🔗 Store Links',
+          value: formatImageSummaryLinks(bestValue, betterValue),
+        });
+
+      return { embed, period, files: [attachment] };
     }
 
     if (isCompact) {
@@ -362,6 +395,150 @@ function formatRows(
   return truncateText(selected.join('\n\n'), EMBED_FIELD_VALUE_LIMIT);
 }
 
+function renderSummaryImage(input: {
+  frequency: SummaryFrequency;
+  periodLabel: string;
+  timezone: string;
+  rate: ExchangeRate | null;
+  availableCount: number;
+  totalCount: number;
+  betterValueCount: number;
+  bestValue: ProductSummaryRow[];
+  betterValue: ProductSummaryRow[];
+}): Buffer {
+  const bestRows = input.bestValue.slice(0, 5);
+  const betterRows = input.betterValue.slice(0, 5);
+  const rowHeight = 72;
+  const headerHeight = 172;
+  const sectionGap = 28;
+  const bestHeight = 54 + Math.max(bestRows.length, 1) * rowHeight;
+  const betterHeight = 54 + Math.max(betterRows.length, 1) * rowHeight;
+  const height = headerHeight + bestHeight + sectionGap + betterHeight + 52;
+  const parts: string[] = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${IMAGE_SUMMARY_WIDTH}" height="${height}" viewBox="0 0 ${IMAGE_SUMMARY_WIDTH} ${height}">`,
+    '<defs>',
+    '<linearGradient id="accent" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>',
+    '<filter id="shadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#020617" flood-opacity="0.32"/></filter>',
+    '</defs>',
+    rect(0, 0, IMAGE_SUMMARY_WIDTH, height, '#111827'),
+    rect(28, 28, IMAGE_SUMMARY_WIDTH - 56, height - 56, '#1f2433', 24, 'filter="url(#shadow)"'),
+    rect(28, 28, 10, height - 56, 'url(#accent)', 5),
+    text('OnlyDrives', 60, 72, 34, '#f8fafc', 800),
+    text(`${formatSummaryFrequency(input.frequency)} Image Summary`, 60, 108, 20, '#93c5fd', 700),
+    text(input.periodLabel, 60, 138, 18, '#cbd5e1', 500),
+    text(input.timezone, 60, 164, 17, '#94a3b8', 500),
+    badge(`${input.availableCount}/${input.totalCount} available`, 690, 61, 190),
+    badge(`${input.betterValueCount} better-value moves`, 900, 61, 238),
+    text(formatImageRate(input.rate), 690, 128, 18, '#cbd5e1', 600),
+  ];
+
+  let y = headerHeight;
+  parts.push(sectionHeading('Best $/TB Right Now', 'Ranked by estimated AUD/TB', 60, y));
+  y += 54;
+  if (bestRows.length === 0) {
+    parts.push(emptyImageRow('No available products with comparable pricing.', y));
+    y += rowHeight;
+  } else {
+    bestRows.forEach((row, index) => {
+      parts.push(bestValueImageRow(row, index + 1, y));
+      y += rowHeight;
+    });
+  }
+
+  y += sectionGap;
+  parts.push(sectionHeading(formatImageBetterValueHeading(input.frequency), 'Current price per TB improved in this summary window', 60, y));
+  y += 54;
+  if (betterRows.length === 0) {
+    parts.push(emptyImageRow('No better-value moves in this summary window.', y));
+    y += rowHeight;
+  } else {
+    betterRows.forEach((row, index) => {
+      parts.push(betterValueImageRow(row, index + 1, y));
+      y += rowHeight;
+    });
+  }
+
+  parts.push(text('Generated by OnlyDrives Monitor', 60, height - 38, 15, '#64748b', 500));
+  parts.push('</svg>');
+
+  return new Resvg(parts.join(''), {
+    fitTo: { mode: 'width', value: IMAGE_SUMMARY_WIDTH },
+    font: {
+      loadSystemFonts: true,
+      defaultFontFamily: 'DejaVu Sans',
+      sansSerifFamily: 'DejaVu Sans',
+    },
+  }).render().asPng();
+}
+
+function bestValueImageRow(row: ProductSummaryRow, index: number, y: number): string {
+  const product = row.product;
+  const trendColor = row.perTbPercentChange !== null && row.perTbPercentChange < -0.001 ? '#34d399' : '#cbd5e1';
+  const title = formatImageTitle(product, 34);
+
+  return [
+    rowBackground(y, index),
+    text(String(index), 78, y + 44, 22, '#f8fafc', 800),
+    text(title, 122, y + 30, 19, '#93c5fd', 800),
+    text(truncateText(product.sku, 28), 122, y + 56, 15, '#94a3b8', 500),
+    text(formatCapacity(product.capacity_tb), 520, y + 42, 18, '#e2e8f0', 700),
+    text(formatSourceName(product.source), 610, y + 42, 17, '#cbd5e1', 600),
+    text(truncateText(product.condition, 18), 752, y + 42, 17, '#cbd5e1', 600),
+    text(formatCompactCurrentPerTb(row), 960, y + 34, 18, '#fef3c7', 800, 'end'),
+    text(formatCompactCurrentTotal(row), 960, y + 59, 15, '#fde68a', 600, 'end'),
+    text(formatImageTrend(row), 1100, y + 44, 18, trendColor, 800, 'end'),
+  ].join('');
+}
+
+function betterValueImageRow(row: ProductSummaryRow, index: number, y: number): string {
+  const product = row.product;
+  const title = formatImageTitle(product, 34);
+
+  return [
+    rowBackground(y, index),
+    text(String(index), 78, y + 44, 22, '#f8fafc', 800),
+    text(title, 122, y + 30, 19, '#93c5fd', 800),
+    text(`${formatCapacity(product.capacity_tb)} • ${formatSourceName(product.source)} • ${truncateText(product.condition, 20)}`, 122, y + 56, 15, '#94a3b8', 500),
+    text(formatPreviousPerTb(row), 560, y + 42, 17, '#cbd5e1', 600, 'end'),
+    text(formatCompactCurrentPerTb(row), 720, y + 42, 17, '#fef3c7', 800, 'end'),
+    text(formatImageSavings(row), 902, y + 42, 17, '#34d399', 800, 'end'),
+    text(formatImageTrend(row), 1100, y + 42, 18, '#34d399', 800, 'end'),
+  ].join('');
+}
+
+function rowBackground(y: number, index: number): string {
+  const fill = index % 2 === 0 ? '#252b3d' : '#22283a';
+  return `${rect(60, y, 1080, 62, fill, 14)}${rect(60, y, 4, 62, index <= 3 ? '#38bdf8' : '#475569', 2)}`;
+}
+
+function sectionHeading(title: string, subtitle: string, x: number, y: number): string {
+  return [
+    text(title, x, y + 24, 24, '#f8fafc', 800),
+    text(subtitle, x, y + 49, 16, '#94a3b8', 500),
+    line(x, y + 60, IMAGE_SUMMARY_WIDTH - x, y + 60, '#334155'),
+  ].join('');
+}
+
+function emptyImageRow(value: string, y: number): string {
+  return [
+    rect(60, y, 1080, 62, '#22283a', 14),
+    text(value, 86, y + 39, 18, '#94a3b8', 600),
+  ].join('');
+}
+
+function formatImageSummaryLinks(bestValue: ProductSummaryRow[], betterValue: ProductSummaryRow[]): string {
+  const lines = [
+    ...bestValue.slice(0, 5).map((row, index) => `🏆 ${index + 1}. ${formatProductLink(row.product, 38)}`),
+    ...betterValue.slice(0, 5).map((row, index) => `📉 ${index + 1}. ${formatProductLink(row.product, 38)}`),
+  ];
+
+  if (lines.length === 0) {
+    return 'No listing links available for this summary.';
+  }
+
+  return truncateText(lines.join('\n'), EMBED_FIELD_VALUE_LIMIT);
+}
+
 function formatCompactBestValueRow(row: ProductSummaryRow, index: number): string {
   const product = row.product;
 
@@ -538,6 +715,52 @@ function formatCompactCurrentTotal(row: ProductSummaryRow): string {
   return `A$${row.currentTotal.toFixed(0)}`;
 }
 
+function formatPreviousPerTb(row: ProductSummaryRow): string {
+  return row.previousPerTbAud === null
+    ? 'was n/a'
+    : `was A$${row.previousPerTbAud.toFixed(2)}`;
+}
+
+function formatImageSavings(row: ProductSummaryRow): string {
+  return row.perTbSavingsAud === null
+    ? 'save n/a'
+    : `save A$${row.perTbSavingsAud.toFixed(2)}`;
+}
+
+function formatImageTrend(row: ProductSummaryRow): string {
+  if (row.perTbPercentChange === null || Math.abs(row.perTbPercentChange) < 0.001) {
+    return 'flat';
+  }
+
+  const arrow = row.perTbPercentChange > 0 ? '↑' : '↓';
+  return `${arrow} ${Math.abs(row.perTbPercentChange * 100).toFixed(1)}%`;
+}
+
+function formatImageRate(rate: ExchangeRate | null): string {
+  if (!rate) {
+    return 'USD -> AUD unavailable';
+  }
+
+  const staleText = rate.stale ? ' cached fallback' : '';
+  return `USD -> AUD ${rate.rate.toFixed(4)} (${rate.rateDate}${staleText})`;
+}
+
+function formatImageTitle(product: Product, limit: number): string {
+  return unescapeMarkdownText(formatProductTitle(product, limit));
+}
+
+function formatImageBetterValueHeading(frequency: SummaryFrequency): string {
+  if (frequency === 'weekly') {
+    return 'Better Value This Week';
+  }
+
+  if (frequency === 'monthly') {
+    return 'Better Value This Month';
+  }
+
+  return 'Better Than Yesterday';
+}
+
 function formatRateLine(rate: ExchangeRate | null): string {
   if (!rate) {
     return '💱 USD -> AUD unavailable';
@@ -632,6 +855,35 @@ function truncateMiddle(value: string, limit: number): string {
   return `${value.slice(0, head)}...${value.slice(value.length - tail)}`;
 }
 
+function rect(x: number, y: number, width: number, height: number, fill: string, radius = 0, extra = ''): string {
+  const radiusText = radius > 0 ? ` rx="${radius}" ry="${radius}"` : '';
+  const extraText = extra ? ` ${extra}` : '';
+  return `<rect x="${x}" y="${y}" width="${width}" height="${height}"${radiusText} fill="${fill}"${extraText}/>`;
+}
+
+function line(x1: number, y1: number, x2: number, y2: number, stroke: string): string {
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="1"/>`;
+}
+
+function text(
+  value: string,
+  x: number,
+  y: number,
+  size: number,
+  fill: string,
+  weight: number,
+  anchor: 'start' | 'middle' | 'end' = 'start'
+): string {
+  return `<text x="${x}" y="${y}" fill="${fill}" font-family="DejaVu Sans, Arial, sans-serif" font-size="${size}" font-weight="${weight}" text-anchor="${anchor}">${escapeXml(value)}</text>`;
+}
+
+function badge(value: string, x: number, y: number, width: number): string {
+  return [
+    rect(x, y, width, 34, '#334155', 17),
+    text(value, x + width / 2, y + 23, 15, '#e2e8f0', 700, 'middle'),
+  ].join('');
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -642,6 +894,19 @@ function escapeInlineCode(value: string): string {
 
 function escapeMarkdownText(value: string): string {
   return value.replace(/[*_~`]/g, '');
+}
+
+function unescapeMarkdownText(value: string): string {
+  return value.replace(/\\/g, '');
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 function escapeMarkdownUrl(value: string): string {

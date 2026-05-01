@@ -301,4 +301,47 @@ describe('SummaryService', () => {
     expect(bestValue).toContain('US$9.00');
     expect(betterValue).toContain('save A$1.50/TB');
   });
+
+  it('renders the image layout as a PNG attachment with listing links', async () => {
+    const products = [
+      createProduct({
+        id: 'one',
+        sku: 'ONE-SKU',
+        name: 'Image Summary Drive 18TB',
+        url: 'https://example.test/image-summary-drive',
+        current_price_total: '90.00',
+        current_price_per_tb: '5.00',
+      }),
+    ];
+    const histories = new Map<string, PriceHistoryEntry[]>([
+      ['ONE-SKU', createHistory([
+        ['2026-04-30T00:00:00.000Z', '100.00', '6.00'],
+        ['2026-05-01T00:00:00.000Z', '90.00', '5.00'],
+      ])],
+    ]);
+    const api = {
+      fetchProducts: vi.fn(async () => products),
+      fetchPriceHistory: vi.fn(async (_source: string, sku: string) => histories.get(sku) ?? []),
+    };
+    const currency = {
+      getUsdToAudRate: vi.fn(async () => rate),
+      convertUsdToAud: vi.fn((amount: number, exchangeRate: ExchangeRate | null) =>
+        exchangeRate ? amount * exchangeRate.rate : null
+      ),
+    };
+    const service = new SummaryService(db, api as never, currency as never);
+
+    const { embed, files } = await service.buildSummary(
+      createSettings({ layout: 'image' }),
+      new Date('2026-05-01T00:00:00.000Z')
+    );
+    const attachment = files?.[0] as { attachment: Buffer } | undefined;
+    const links = (embed.toJSON().fields ?? [])
+      .find(field => field.name === '🔗 Store Links')?.value ?? '';
+
+    expect(embed.toJSON().image?.url).toBe('attachment://onlydrives-summary.png');
+    expect(files).toHaveLength(1);
+    expect(attachment?.attachment.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    expect(links).toContain('[Image Summary Drive 18TB](https://example.test/image-summary-drive)');
+  });
 });

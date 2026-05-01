@@ -69,7 +69,8 @@ export function createSummaryCommand(db: Database, options: SummaryCommandOption
             .setDescription('Summary layout; compact is the default')
             .addChoices(
               { name: 'Compact', value: 'compact' },
-              { name: 'Detailed', value: 'detailed' }
+              { name: 'Detailed', value: 'detailed' },
+              { name: 'Image', value: 'image' }
             )
         )
     )
@@ -91,7 +92,7 @@ export function createSummaryCommand(db: Database, options: SummaryCommandOption
     .addSubcommand(sub =>
       sub
         .setName('layout')
-        .setDescription('Switch between compact and detailed summary layouts')
+        .setDescription('Switch between compact, detailed, and image summary layouts')
         .addStringOption(opt =>
           opt
             .setName('mode')
@@ -99,7 +100,8 @@ export function createSummaryCommand(db: Database, options: SummaryCommandOption
             .setRequired(true)
             .addChoices(
               { name: 'Compact', value: 'compact' },
-              { name: 'Detailed', value: 'detailed' }
+              { name: 'Detailed', value: 'detailed' },
+              { name: 'Image', value: 'image' }
             )
         )
     );
@@ -279,9 +281,9 @@ async function handlePreview(
     timezone: settings.timezone,
     layout: settings.layout,
   };
-  const { embed } = await summaryService.buildSummary(enabledSettings);
+  const { embed, files } = await summaryService.buildSummary(enabledSettings);
 
-  await interaction.editReply({ embeds: [embed] });
+  await interaction.editReply({ embeds: [embed], files });
 }
 
 async function handleNow(
@@ -332,9 +334,9 @@ async function handleNow(
     timezone: settings.timezone,
     layout: settings.layout,
   };
-  const { embed } = await summaryService.buildSummary(enabledSettings);
+  const { embed, files } = await summaryService.buildSummary(enabledSettings);
 
-  await interaction.editReply({ embeds: [embed] });
+  await interaction.editReply({ embeds: [embed], files });
 }
 
 function formatCadence(frequency: SummaryFrequency, time: string, timezone: string): string {

@@ -14,7 +14,7 @@ RUN npm prune --production
 
 FROM node:20-alpine AS production
 
-RUN apk add --no-cache libstdc++
+RUN apk add --no-cache libstdc++ fontconfig ttf-dejavu
 
 WORKDIR /app
 
