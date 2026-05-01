@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.2](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.1...onlydrives-alert-bot-v1.4.2) (2026-05-01)
+
+
+### Bug Fixes
+
+* focus summary digests on current best value and better-value movers
+* link summary rows to store listings and add clearer emoji hierarchy
+
 ## [1.4.1](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.0...onlydrives-alert-bot-v1.4.1) (2026-05-01)
 
 
