@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.5](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.4...onlydrives-alert-bot-v1.4.5) (2026-05-01)
+
+
+### Bug Fixes
+
+* redesign image summary best-value rows to prevent price/metadata overlap
+
 ## [1.4.4](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.3...onlydrives-alert-bot-v1.4.4) (2026-05-01)
 
 
