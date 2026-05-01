@@ -408,7 +408,7 @@ function renderSummaryImage(input: {
 }): Buffer {
   const bestRows = input.bestValue.slice(0, 5);
   const betterRows = input.betterValue.slice(0, 5);
-  const rowHeight = 72;
+  const rowHeight = 84;
   const headerHeight = 172;
   const sectionGap = 28;
   const bestHeight = 54 + Math.max(bestRows.length, 1) * rowHeight;
@@ -473,20 +473,14 @@ function renderSummaryImage(input: {
 
 function bestValueImageRow(row: ProductSummaryRow, index: number, y: number): string {
   const product = row.product;
-  const trendColor = row.perTbPercentChange !== null && row.perTbPercentChange < -0.001 ? '#34d399' : '#cbd5e1';
-  const title = formatImageTitle(product, 34);
+  const title = formatImageTitle(product, 40);
 
   return [
     rowBackground(y, index),
     text(String(index), 78, y + 44, 22, '#f8fafc', 800),
-    text(title, 122, y + 30, 19, '#93c5fd', 800),
-    text(truncateText(product.sku, 28), 122, y + 56, 15, '#94a3b8', 500),
-    text(formatCapacity(product.capacity_tb), 520, y + 42, 18, '#e2e8f0', 700),
-    text(formatSourceName(product.source), 610, y + 42, 17, '#cbd5e1', 600),
-    text(truncateText(product.condition, 18), 752, y + 42, 17, '#cbd5e1', 600),
-    text(formatCompactCurrentPerTb(row), 960, y + 34, 18, '#fef3c7', 800, 'end'),
-    text(formatCompactCurrentTotal(row), 960, y + 59, 15, '#fde68a', 600, 'end'),
-    text(formatImageTrend(row), 1100, y + 44, 18, trendColor, 800, 'end'),
+    text(title, 122, y + 29, 19, '#93c5fd', 800),
+    text(formatImageProductMeta(row, 78), 122, y + 60, 15, '#94a3b8', 500),
+    pricePill(formatCompactCurrentPerTb(row), 900, y + 16, 220, 44),
   ].join('');
 }
 
@@ -508,7 +502,15 @@ function betterValueImageRow(row: ProductSummaryRow, index: number, y: number): 
 
 function rowBackground(y: number, index: number): string {
   const fill = index % 2 === 0 ? '#252b3d' : '#22283a';
-  return `${rect(60, y, 1080, 62, fill, 14)}${rect(60, y, 4, 62, index <= 3 ? '#38bdf8' : '#475569', 2)}`;
+  return `${rect(60, y, 1080, 74, fill, 14)}${rect(60, y, 4, 74, index <= 3 ? '#38bdf8' : '#475569', 2)}`;
+}
+
+function pricePill(value: string, x: number, y: number, width: number, height: number): string {
+  return [
+    rect(x, y, width, height, '#30384d', 14),
+    rect(x, y, 4, height, '#facc15', 2),
+    text(value, x + width - 18, y + 29, 19, '#fef3c7', 800, 'end'),
+  ].join('');
 }
 
 function sectionHeading(title: string, subtitle: string, x: number, y: number): string {
@@ -725,6 +727,16 @@ function formatImageSavings(row: ProductSummaryRow): string {
   return row.perTbSavingsAud === null
     ? 'save n/a'
     : `save A$${row.perTbSavingsAud.toFixed(2)}`;
+}
+
+function formatImageProductMeta(row: ProductSummaryRow, limit: number): string {
+  const product = row.product;
+  return truncateText([
+    truncateMiddle(product.sku, 26),
+    formatCapacity(product.capacity_tb),
+    formatSourceName(product.source),
+    product.condition,
+  ].join(' • '), limit);
 }
 
 function formatImageTrend(row: ProductSummaryRow): string {
