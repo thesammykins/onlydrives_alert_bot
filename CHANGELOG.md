@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.3](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.2...onlydrives-alert-bot-v1.4.3) (2026-05-01)
+
+
+### Features
+
+* add switchable compact and detailed summary layouts
+
+
+### Bug Fixes
+
+* make compact summaries fit Discord's narrow embed width with AUD-first rows
+
 ## [1.4.2](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.1...onlydrives-alert-bot-v1.4.2) (2026-05-01)
 
 
