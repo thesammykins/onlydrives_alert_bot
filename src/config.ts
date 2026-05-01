@@ -6,6 +6,7 @@ const envSchema = z.object({
   DISCORD_CLIENT_ID: z.string().min(1),
   DISCORD_GUILD_ID: z.string().optional(),
   ALERT_CHANNEL_ID: z.string().min(1),
+  SUMMARY_TEST_GUILD_ID: z.string().optional(),
   POLL_INTERVAL_MS: z.string().transform(Number).default('300000'),
   PRICE_DROP_THRESHOLD: z.string().transform(Number).default('0.05'),
   PRICE_SPIKE_THRESHOLD: z.string().transform(Number).default('0.10'),
@@ -22,6 +23,7 @@ export function loadConfig(): Config {
       clientId: env.DISCORD_CLIENT_ID,
       guildId: env.DISCORD_GUILD_ID,
       alertChannelId: env.ALERT_CHANNEL_ID,
+      summaryTestGuildId: env.SUMMARY_TEST_GUILD_ID || undefined,
     },
     monitoring: {
       pollIntervalMs: env.POLL_INTERVAL_MS,

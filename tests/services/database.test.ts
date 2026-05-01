@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import BetterSqlite3 from 'better-sqlite3';
 import { Database } from '../../src/services/database.js';
-import { unlink } from 'fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { Product, ProductState } from '../../src/types.js';
 
 const TEST_DB_PATH = ':memory:';
@@ -91,36 +94,71 @@ describe('Database', () => {
   });
 
   describe('alert logging', () => {
+    it('migrates an existing alert_log table that has no guild_id column', async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), 'onlydrives-db-'));
+      const dbPath = path.join(dir, 'bot.db');
+      const oldDb = new BetterSqlite3(dbPath);
+      oldDb.exec(`
+        CREATE TABLE alert_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product_id TEXT NOT NULL,
+          alert_type TEXT NOT NULL,
+          sent_at TEXT NOT NULL
+        );
+      `);
+      oldDb.close();
+
+      const migrated = new Database(dbPath);
+      migrated.logAlert('guild-1', 'product-1', 'price_drop');
+
+      expect(migrated.canSendAlert('guild-1', 'product-1', 'price_drop', 60000)).toBe(false);
+
+      migrated.close();
+      await rm(dir, { recursive: true, force: true });
+    });
+
     it('logs alert and respects cooldown', () => {
+      const guildId = 'guild-1';
       const productId = 'alert-test';
       const alertType = 'price_drop';
 
-      const canSendBefore = db.canSendAlert(productId, alertType, 60000);
+      const canSendBefore = db.canSendAlert(guildId, productId, alertType, 60000);
       expect(canSendBefore).toBe(true);
 
-      db.logAlert(productId, alertType);
+      db.logAlert(guildId, productId, alertType);
 
-      const canSendAfter = db.canSendAlert(productId, alertType, 60000);
+      const canSendAfter = db.canSendAlert(guildId, productId, alertType, 60000);
       expect(canSendAfter).toBe(false);
     });
 
     it('allows alert after cooldown expires', () => {
+      const guildId = 'guild-1';
       const productId = 'cooldown-test';
       const alertType = 'price_spike';
 
-      db.logAlert(productId, alertType);
+      db.logAlert(guildId, productId, alertType);
       
-      const canSendWithShortCooldown = db.canSendAlert(productId, alertType, 0);
+      const canSendWithShortCooldown = db.canSendAlert(guildId, productId, alertType, 0);
       expect(canSendWithShortCooldown).toBe(true);
     });
 
     it('different alert types have separate cooldowns', () => {
+      const guildId = 'guild-1';
       const productId = 'multi-alert';
 
-      db.logAlert(productId, 'price_drop');
+      db.logAlert(guildId, productId, 'price_drop');
 
-      expect(db.canSendAlert(productId, 'price_drop', 60000)).toBe(false);
-      expect(db.canSendAlert(productId, 'back_in_stock', 60000)).toBe(true);
+      expect(db.canSendAlert(guildId, productId, 'price_drop', 60000)).toBe(false);
+      expect(db.canSendAlert(guildId, productId, 'back_in_stock', 60000)).toBe(true);
+    });
+
+    it('guilds have separate alert cooldowns', () => {
+      const productId = 'guild-alert';
+
+      db.logAlert('guild-1', productId, 'price_drop');
+
+      expect(db.canSendAlert('guild-1', productId, 'price_drop', 60000)).toBe(false);
+      expect(db.canSendAlert('guild-2', productId, 'price_drop', 60000)).toBe(true);
     });
   });
 
@@ -213,40 +251,136 @@ describe('Database', () => {
   });
 
   describe('getBotSettings', () => {
-    it('returns defaults when no config set', () => {
-      const settings = db.getBotSettings();
+    it('returns disabled defaults when no guild config is set', () => {
+      const settings = db.getBotSettings('guild-1');
 
       expect(settings.channelPriceDrop).toBeNull();
-      expect(settings.alertPriceDropEnabled).toBe(true);
+      expect(settings.alertPriceDropEnabled).toBe(false);
       expect(settings.priceDropThreshold).toBeNull();
       expect(settings.pollIntervalMs).toBeNull();
+      expect(settings.summaryEnabled).toBe(false);
     });
 
     it('returns configured values', () => {
-      db.setConfig('channel_price_drop', '123456');
-      db.setConfig('alert_price_drop_enabled', 'false');
-      db.setConfig('price_drop_threshold', '0.08');
-      db.setConfig('poll_interval_ms', '60000');
+      db.setGuildConfig('guild-1', 'channel_price_drop', '123456');
+      db.setGuildConfig('guild-1', 'alert_price_drop_enabled', 'true');
+      db.setGuildConfig('guild-1', 'price_drop_threshold', '0.08');
+      db.setGuildConfig('guild-1', 'poll_interval_ms', '60000');
+      db.setGuildConfig('guild-1', 'summary_enabled', 'true');
+      db.setGuildConfig('guild-1', 'summary_frequency', 'weekly');
+      db.setGuildConfig('guild-1', 'summary_channel_id', 'summary-channel');
+      db.setGuildConfig('guild-1', 'summary_time', '09:00');
+      db.setGuildConfig('guild-1', 'summary_timezone', 'Australia/Melbourne');
 
-      const settings = db.getBotSettings();
+      const settings = db.getBotSettings('guild-1');
 
       expect(settings.channelPriceDrop).toBe('123456');
-      expect(settings.alertPriceDropEnabled).toBe(false);
+      expect(settings.alertPriceDropEnabled).toBe(true);
       expect(settings.priceDropThreshold).toBe(0.08);
       expect(settings.pollIntervalMs).toBe(60000);
+      expect(settings.summaryEnabled).toBe(true);
+      expect(settings.summaryFrequency).toBe('weekly');
+      expect(settings.summaryChannelId).toBe('summary-channel');
     });
   });
 
   describe('setBotSetting', () => {
     it('sets values', () => {
-      db.setBotSetting('channel_new_product', '999');
-      expect(db.getConfig('channel_new_product')).toBe('999');
+      db.setBotSetting('guild-1', 'channel_new_product', '999');
+      expect(db.getGuildConfig('guild-1', 'channel_new_product')).toBe('999');
     });
 
     it('deletes values when null', () => {
-      db.setConfig('channel_new_product', '999');
-      db.setBotSetting('channel_new_product', null);
-      expect(db.getConfig('channel_new_product')).toBeNull();
+      db.setGuildConfig('guild-1', 'channel_new_product', '999');
+      db.setBotSetting('guild-1', 'channel_new_product', null);
+      expect(db.getGuildConfig('guild-1', 'channel_new_product')).toBeNull();
+    });
+  });
+
+  describe('guild-scoped configuration', () => {
+    it('does not share settings between guilds', () => {
+      db.setBotSetting('guild-a', 'alert_price_drop_enabled', 'true');
+      db.setBotSetting('guild-a', 'channel_price_drop', 'channel-a');
+
+      const guildA = db.getBotSettings('guild-a');
+      const guildB = db.getBotSettings('guild-b');
+
+      expect(guildA.alertPriceDropEnabled).toBe(true);
+      expect(guildA.channelPriceDrop).toBe('channel-a');
+      expect(guildB.alertPriceDropEnabled).toBe(false);
+      expect(guildB.channelPriceDrop).toBeNull();
+    });
+
+    it('migrates legacy global config only to the resolved legacy guild', () => {
+      db.setConfig('alert_price_drop_enabled', 'false');
+      db.setConfig('price_drop_threshold', '0.08');
+
+      db.migrateLegacyGlobalConfig('legacy-guild', 'default-channel');
+
+      const legacy = db.getBotSettings('legacy-guild');
+      const other = db.getBotSettings('new-guild');
+
+      expect(legacy.alertPriceDropEnabled).toBe(false);
+      expect(legacy.priceDropThreshold).toBe(0.08);
+      expect(legacy.alertPriceSpikeEnabled).toBe(true);
+      expect(legacy.channelPriceSpike).toBe('default-channel');
+      expect(other.alertPriceSpikeEnabled).toBe(false);
+      expect(other.channelPriceSpike).toBeNull();
+    });
+  });
+
+  describe('summary settings and runs', () => {
+    it('stores enabled summary settings for a guild', () => {
+      db.setSummarySettings('guild-1', {
+        enabled: true,
+        frequency: 'daily',
+        channelId: 'summary-channel',
+        time: '09:00',
+        timezone: 'Australia/Melbourne',
+      });
+
+      const settings = db.getSummarySettings('guild-1');
+      const enabled = db.getEnabledSummarySettings();
+
+      expect(settings.summaryEnabled).toBe(true);
+      expect(settings.frequency).toBe('daily');
+      expect(settings.channelId).toBe('summary-channel');
+      expect(enabled).toHaveLength(1);
+      expect(enabled[0]!.guildId).toBe('guild-1');
+    });
+
+    it('disables summaries without removing the stored cadence', () => {
+      db.setSummarySettings('guild-1', {
+        enabled: true,
+        frequency: 'weekly',
+        channelId: 'summary-channel',
+        time: '09:00',
+        timezone: 'Australia/Melbourne',
+      });
+
+      db.disableSummary('guild-1');
+
+      const settings = db.getSummarySettings('guild-1');
+      expect(settings.summaryEnabled).toBe(false);
+      expect(settings.frequency).toBe('weekly');
+      expect(db.getEnabledSummarySettings()).toEqual([]);
+    });
+
+    it('deduplicates summary runs by guild, frequency, and period', () => {
+      const run = {
+        guildId: 'guild-1',
+        frequency: 'daily' as const,
+        periodStart: '2026-01-01T00:00:00.000Z',
+        periodEnd: '2026-01-02T00:00:00.000Z',
+        channelId: 'summary-channel',
+        messageId: 'message-1',
+        sentAt: '2026-01-02T09:00:00.000Z',
+      };
+
+      expect(db.recordSummaryRun(run)).toBe(true);
+      expect(db.recordSummaryRun({ ...run, messageId: 'message-2' })).toBe(false);
+      expect(db.hasSummaryRun('guild-1', 'daily', run.periodStart, run.periodEnd)).toBe(true);
+      expect(db.recordSummaryRun({ ...run, guildId: 'guild-2', messageId: 'message-3' })).toBe(true);
     });
   });
 

@@ -54,7 +54,7 @@ export function createConfigCommand(db: Database): Command {
         .addChannelOption(opt =>
           opt
             .setName('channel')
-            .setDescription('Channel to send alerts to (leave empty to use default)')
+            .setDescription('Channel to send alerts to (leave empty to clear)')
             .addChannelTypes(ChannelType.GuildText)
         )
     )
@@ -136,6 +136,14 @@ export function createConfigCommand(db: Database): Command {
   return {
     data,
     async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+      if (!interaction.guildId) {
+        await interaction.reply({
+          content: 'Config settings are server-specific. Use this command inside a server.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
       const subcommand = interaction.options.getSubcommand();
 
       switch (subcommand) {
@@ -166,17 +174,16 @@ export function createConfigCommand(db: Database): Command {
 }
 
 async function handleShow(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
-  const settings = db.getBotSettings();
-  const config = db.getAllConfig();
+  const settings = db.getBotSettings(interaction.guildId!);
 
   const lines: string[] = [
     '**Current Configuration**',
     '',
     '**Alert Channels:**',
-    `- Price Drop: ${settings.channelPriceDrop ? `<#${settings.channelPriceDrop}>` : '(default)'}`,
-    `- Price Spike: ${settings.channelPriceSpike ? `<#${settings.channelPriceSpike}>` : '(default)'}`,
-    `- New Product: ${settings.channelNewProduct ? `<#${settings.channelNewProduct}>` : '(default)'}`,
-    `- Back in Stock: ${settings.channelBackInStock ? `<#${settings.channelBackInStock}>` : '(default)'}`,
+    `- Price Drop: ${settings.channelPriceDrop ? `<#${settings.channelPriceDrop}>` : '(not set)'}`,
+    `- Price Spike: ${settings.channelPriceSpike ? `<#${settings.channelPriceSpike}>` : '(not set)'}`,
+    `- New Product: ${settings.channelNewProduct ? `<#${settings.channelNewProduct}>` : '(not set)'}`,
+    `- Back in Stock: ${settings.channelBackInStock ? `<#${settings.channelBackInStock}>` : '(not set)'}`,
     '',
     '**Alert Toggles:**',
     `- Price Drop: ${settings.alertPriceDropEnabled ? '✅ Enabled' : '❌ Disabled'}`,
@@ -202,15 +209,15 @@ async function handleChannel(interaction: ChatInputCommandInteraction, db: Datab
   const configKey = `channel_${alertType}`;
 
   if (channel) {
-    db.setBotSetting(configKey, channel.id);
+    db.setBotSetting(interaction.guildId!, configKey, channel.id);
     await interaction.reply({
       content: `✅ ${formatAlertType(alertType)} alerts will now be sent to <#${channel.id}>`,
       flags: MessageFlags.Ephemeral,
     });
   } else {
-    db.setBotSetting(configKey, null);
+    db.setBotSetting(interaction.guildId!, configKey, null);
     await interaction.reply({
-      content: `✅ ${formatAlertType(alertType)} alerts will now use the default channel`,
+      content: `✅ ${formatAlertType(alertType)} alert channel cleared. Set a channel before enabling this alert type.`,
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -220,11 +227,15 @@ async function handleToggle(interaction: ChatInputCommandInteraction, db: Databa
   const alertType = interaction.options.getString('alert_type', true);
   const enabled = interaction.options.getBoolean('enabled', true);
   const configKey = `alert_${alertType}_enabled`;
+  const channelConfigured = db.getGuildConfig(interaction.guildId!, `channel_${alertType}`) !== null;
+  const channelWarning = enabled && !channelConfigured
+    ? '\nSet a channel with `/config channel` before this alert can be delivered.'
+    : '';
 
-  db.setBotSetting(configKey, enabled.toString());
+  db.setBotSetting(interaction.guildId!, configKey, enabled.toString());
   
   await interaction.reply({
-    content: `✅ ${formatAlertType(alertType)} alerts are now ${enabled ? '**enabled**' : '**disabled**'}`,
+    content: `✅ ${formatAlertType(alertType)} alerts are now ${enabled ? '**enabled**' : '**disabled**'}${channelWarning}`,
     flags: MessageFlags.Ephemeral,
   });
 }
@@ -236,13 +247,13 @@ async function handleThreshold(interaction: ChatInputCommandInteraction, db: Dat
 
   if (percent !== null) {
     const decimal = percent / 100;
-    db.setBotSetting(configKey, decimal.toString());
+    db.setBotSetting(interaction.guildId!, configKey, decimal.toString());
     await interaction.reply({
       content: `✅ ${formatAlertType(type)} threshold set to **${percent}%**`,
       flags: MessageFlags.Ephemeral,
     });
   } else {
-    db.setBotSetting(configKey, null);
+    db.setBotSetting(interaction.guildId!, configKey, null);
     await interaction.reply({
       content: `✅ ${formatAlertType(type)} threshold reset to .env default`,
       flags: MessageFlags.Ephemeral,
@@ -255,13 +266,13 @@ async function handleInterval(interaction: ChatInputCommandInteraction, db: Data
 
   if (seconds !== null) {
     const ms = seconds * 1000;
-    db.setBotSetting('poll_interval_ms', ms.toString());
+    db.setBotSetting(interaction.guildId!, 'poll_interval_ms', ms.toString());
     await interaction.reply({
       content: `✅ Poll interval set to **${seconds} seconds**\n⚠️ Restart the bot for this change to take effect.`,
       flags: MessageFlags.Ephemeral,
     });
   } else {
-    db.setBotSetting('poll_interval_ms', null);
+    db.setBotSetting(interaction.guildId!, 'poll_interval_ms', null);
     await interaction.reply({
       content: `✅ Poll interval reset to .env default\n⚠️ Restart the bot for this change to take effect.`,
       flags: MessageFlags.Ephemeral,
@@ -274,13 +285,13 @@ async function handleCooldown(interaction: ChatInputCommandInteraction, db: Data
 
   if (minutes !== null) {
     const ms = minutes * 60 * 1000;
-    db.setBotSetting('alert_cooldown_ms', ms.toString());
+    db.setBotSetting(interaction.guildId!, 'alert_cooldown_ms', ms.toString());
     await interaction.reply({
       content: `✅ Alert cooldown set to **${minutes} minutes**`,
       flags: MessageFlags.Ephemeral,
     });
   } else {
-    db.setBotSetting('alert_cooldown_ms', null);
+    db.setBotSetting(interaction.guildId!, 'alert_cooldown_ms', null);
     await interaction.reply({
       content: `✅ Alert cooldown reset to .env default`,
       flags: MessageFlags.Ephemeral,
@@ -289,12 +300,10 @@ async function handleCooldown(interaction: ChatInputCommandInteraction, db: Data
 }
 
 async function handleReset(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
-  for (const key of Object.keys(SETTING_KEYS)) {
-    db.setBotSetting(key, null);
-  }
+  db.resetBotSettings(interaction.guildId!);
 
   await interaction.reply({
-    content: '✅ All settings reset to .env defaults\n⚠️ Restart the bot for interval changes to take effect.',
+    content: '✅ All server settings reset. Alerts and summaries are now disabled until explicitly enabled.',
     flags: MessageFlags.Ephemeral,
   });
 }

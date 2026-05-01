@@ -7,7 +7,7 @@ import { loadCommands } from './commands/index.js';
 async function deployCommands(): Promise<void> {
   const config = loadConfig();
   const db = new Database(':memory:');
-  const commands = loadCommands(db);
+  const commands = loadCommands(db, config);
 
   const commandData = commands.map(c => c.data.toJSON());
 

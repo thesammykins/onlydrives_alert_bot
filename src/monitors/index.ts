@@ -65,11 +65,11 @@ export class MonitorOrchestrator {
         console.log('[Monitor] First run detected - syncing products without alerts');
       }
 
-      const settings = this.db.getBotSettings();
-      this.priceMonitor = new PriceMonitor({
-        priceDropThreshold: settings.priceDropThreshold ?? this.config.monitoring.priceDropThreshold,
-        priceSpikeThreshold: settings.priceSpikeThreshold ?? this.config.monitoring.priceSpikeThreshold,
+      const thresholds = this.db.getMinimumAlertThresholds({
+        priceDropThreshold: this.config.monitoring.priceDropThreshold,
+        priceSpikeThreshold: this.config.monitoring.priceSpikeThreshold,
       });
+      this.priceMonitor = new PriceMonitor(thresholds);
 
       let alertCount = 0;
       let subscriptionAlertCount = 0;
@@ -84,8 +84,8 @@ export class MonitorOrchestrator {
         if (!isFirstRun) {
           for (const alert of alerts) {
             const sent = await this.alerter.sendAlert(alert);
-            if (sent) {
-              alertCount++;
+            if (sent > 0) {
+              alertCount += sent;
               if (alert.type === 'price_drop' || alert.type === 'price_spike') {
                 priceAlertSent = true;
               }

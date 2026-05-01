@@ -23,40 +23,50 @@ export class Alerter {
     this.envConfig = envConfig;
   }
 
-  async sendAlert(alert: AlertEvent): Promise<boolean> {
+  async sendAlert(alert: AlertEvent): Promise<number> {
     const productId = alert.product.id;
     const alertType = alert.type;
-    const settings = this.db.getBotSettings();
+    const targets = this.db.getGuildAlertTargets(alertType);
+    let sentCount = 0;
 
-    if (!this.isAlertTypeEnabled(alertType, settings)) {
-      console.log(`[Alerter] Skipping ${alertType} for ${productId} - alert type disabled`);
-      return false;
+    for (const target of targets) {
+      const settings = target.settings;
+
+      if (!this.isAlertTypeEnabled(alertType, settings)) {
+        console.log(`[Alerter] Skipping ${alertType} for ${productId} in ${target.guildId} - alert type disabled`);
+        continue;
+      }
+
+      if (!this.meetsGuildThreshold(alert, settings)) {
+        console.log(`[Alerter] Skipping ${alertType} for ${productId} in ${target.guildId} - below guild threshold`);
+        continue;
+      }
+
+      const cooldownMs = settings.alertCooldownMs ?? this.defaultCooldownMs;
+      if (!this.db.canSendAlert(target.guildId, productId, alertType, cooldownMs)) {
+        console.log(`[Alerter] Skipping ${alertType} for ${productId} in ${target.guildId} - cooldown active`);
+        continue;
+      }
+
+      const channel = await this.getChannel(target.channelId);
+      if (!channel) {
+        console.error(`[Alerter] Could not find channel ${target.channelId}`);
+        continue;
+      }
+
+      const embed = createAlertEmbed(alert);
+
+      try {
+        await channel.send({ embeds: [embed] });
+        this.db.logAlert(target.guildId, productId, alertType);
+        sentCount++;
+        console.log(`[Alerter] Sent ${alertType} alert for ${alert.product.sku} to #${channel.name}`);
+      } catch (error) {
+        console.error(`[Alerter] Failed to send alert:`, error);
+      }
     }
 
-    const cooldownMs = settings.alertCooldownMs ?? this.defaultCooldownMs;
-    if (!this.db.canSendAlert(productId, alertType, cooldownMs)) {
-      console.log(`[Alerter] Skipping ${alertType} for ${productId} - cooldown active`);
-      return false;
-    }
-
-    const channelId = this.getChannelForAlertType(alertType, settings);
-    const channel = await this.getChannel(channelId);
-    if (!channel) {
-      console.error(`[Alerter] Could not find channel ${channelId}`);
-      return false;
-    }
-
-    const embed = createAlertEmbed(alert);
-
-    try {
-      await channel.send({ embeds: [embed] });
-      this.db.logAlert(productId, alertType);
-      console.log(`[Alerter] Sent ${alertType} alert for ${alert.product.sku} to #${channel.name}`);
-      return true;
-    } catch (error) {
-      console.error(`[Alerter] Failed to send alert:`, error);
-      return false;
-    }
+    return sentCount;
   }
 
   async sendSubscriptionAlerts(alert: AlertEvent): Promise<number> {
@@ -121,6 +131,18 @@ export class Alerter {
     return true;
   }
 
+  private meetsGuildThreshold(alert: AlertEvent, settings: BotSettings): boolean {
+    if (alert.type === 'price_drop' && settings.priceDropThreshold !== null) {
+      return (alert.percentChange ?? 0) <= -settings.priceDropThreshold;
+    }
+
+    if (alert.type === 'price_spike' && settings.priceSpikeThreshold !== null) {
+      return (alert.percentChange ?? 0) >= settings.priceSpikeThreshold;
+    }
+
+    return true;
+  }
+
   private isQuietHours(userId: string): boolean {
     const prefs = this.db.getUserPreferences(userId);
     if (!prefs || prefs.quiet_start_hour === null || prefs.quiet_end_hour === null) {
@@ -154,21 +176,6 @@ export class Alerter {
         return settings.alertBackInStockEnabled;
       default:
         return true;
-    }
-  }
-
-  private getChannelForAlertType(alertType: AlertType, settings: BotSettings): string {
-    switch (alertType) {
-      case 'price_drop':
-        return settings.channelPriceDrop ?? this.defaultChannelId;
-      case 'price_spike':
-        return settings.channelPriceSpike ?? this.defaultChannelId;
-      case 'new_product':
-        return settings.channelNewProduct ?? this.defaultChannelId;
-      case 'back_in_stock':
-        return settings.channelBackInStock ?? this.defaultChannelId;
-      default:
-        return this.defaultChannelId;
     }
   }
 

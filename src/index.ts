@@ -1,9 +1,11 @@
 import { Events } from 'discord.js';
+import type { Client } from 'discord.js';
 import { createClient, setupMessageHandler } from './bot.js';
 import { loadConfig } from './config.js';
 import { Database } from './services/database.js';
 import { MonitorOrchestrator } from './monitors/index.js';
 import { loadCommands } from './commands/index.js';
+import { SummaryScheduler } from './services/summary-scheduler.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -25,7 +27,7 @@ async function main(): Promise<void> {
 
   const client = createClient();
 
-  const commands = loadCommands(db);
+  const commands = loadCommands(db, config);
   for (const command of commands) {
     client.commands.set(command.data.name, command);
   }
@@ -34,15 +36,25 @@ async function main(): Promise<void> {
   setupMessageHandler(client, db);
   console.log('[Main] Message handler configured');
 
-  client.once(Events.ClientReady, (readyClient) => {
+  client.once(Events.ClientReady, async (readyClient) => {
     console.log(`[Main] Logged in as ${readyClient.user.tag}`);
+
+    const legacyGuildId = await resolveLegacyGuildId(client, config.discord.guildId, config.discord.alertChannelId);
+    if (legacyGuildId) {
+      db.migrateLegacyGlobalConfig(legacyGuildId, config.discord.alertChannelId);
+      console.log(`[Main] Migrated legacy server config for guild ${legacyGuildId}`);
+    }
 
     const monitor = new MonitorOrchestrator(client, config, db);
     monitor.start();
 
+    const summaryScheduler = new SummaryScheduler(client, db);
+    summaryScheduler.start();
+
     const shutdown = () => {
       console.log('[Main] Shutting down...');
       monitor.stop();
+      summaryScheduler.stop();
       db.close();
       client.destroy();
       process.exit(0);
@@ -53,6 +65,27 @@ async function main(): Promise<void> {
   });
 
   await client.login(config.discord.token);
+}
+
+async function resolveLegacyGuildId(
+  client: Client,
+  configuredGuildId: string | undefined,
+  alertChannelId: string
+): Promise<string | null> {
+  if (configuredGuildId) {
+    return configuredGuildId;
+  }
+
+  try {
+    const channel = await client.channels.fetch(alertChannelId);
+    if (channel && 'guildId' in channel && typeof channel.guildId === 'string') {
+      return channel.guildId;
+    }
+  } catch (error) {
+    console.warn('[Main] Could not resolve legacy guild from alert channel:', error);
+  }
+
+  return null;
 }
 
 main().catch((error) => {

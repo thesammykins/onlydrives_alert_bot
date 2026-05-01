@@ -78,6 +78,15 @@ interface Product {
    - `/history <sku>` - Show price history chart/summary for a product
    - `/watch <sku>` - Add a product to personal watchlist (future extension point)
    - `/config` - View/modify alert settings (admin only)
+   - `/summary on|off|status|preview|now` - Configure opt-in daily, weekly, or monthly summaries per server
+
+5. **Summary Digests**
+   - Summaries are disabled by default for every new server.
+   - `/summary on` stores the summary cadence, channel, send time, and IANA timezone for the current server.
+   - Daily summaries cover the previous 24 hours, weekly summaries cover the previous 7 days and send on Monday, and monthly summaries cover the previous calendar month and send on the 1st.
+   - East Digital listings are treated as USD and include estimated AUD values from a cached Frankfurter USD/AUD reference rate.
+   - If notable price drops or increases exist, the summary shows ranked drops, increases, and compact new/restocked entries. If not, it shows the top 5 available products by estimated AUD/TB.
+   - `/summary now` manually sends the current configured summary in the command channel and is restricted to `SUMMARY_TEST_GUILD_ID`.
 
 ### Alert Rate Limiting
 - Deduplicate alerts: Same product alert max once per 4 hours
@@ -165,6 +174,8 @@ CREATE INDEX idx_alerts_product_type ON alert_log(product_id, alert_type, sent_a
 ```
 
 **Note**: Full price history is available via the API's `/api/sku/{source}-{sku}/price-history` endpoint. The bot only stores minimal state needed for change detection and alert deduplication.
+
+Runtime server configuration is stored in `guild_config(guild_id, key, value, updated_at)`. Summary send dedupe is stored in `summary_runs`, and cached currency references are stored in `exchange_rates`.
 
 ### Configuration
 Environment variables (via `.env`):

@@ -35,6 +35,8 @@ export interface ProductState {
 
 export type AlertType = 'price_drop' | 'price_spike' | 'new_product' | 'back_in_stock';
 
+export type SummaryFrequency = 'daily' | 'weekly' | 'monthly';
+
 export interface AlertEvent {
   type: AlertType;
   product: Product;
@@ -49,6 +51,7 @@ export interface Config {
     clientId: string;
     guildId?: string;
     alertChannelId: string;
+    summaryTestGuildId?: string;
   };
   monitoring: {
     pollIntervalMs: number;
@@ -72,6 +75,48 @@ export interface BotSettings {
   priceSpikeThreshold: number | null;
   pollIntervalMs: number | null;
   alertCooldownMs: number | null;
+  summaryEnabled: boolean;
+  summaryFrequency: SummaryFrequency | null;
+  summaryChannelId: string | null;
+  summaryTime: string | null;
+  summaryTimezone: string | null;
+}
+
+export interface SummarySettings {
+  guildId: string;
+  summaryEnabled: boolean;
+  frequency: SummaryFrequency | null;
+  channelId: string | null;
+  time: string | null;
+  timezone: string | null;
+}
+
+export interface EnabledSummarySettings {
+  guildId: string;
+  summaryEnabled: true;
+  frequency: SummaryFrequency;
+  channelId: string;
+  time: string;
+  timezone: string;
+}
+
+export interface ExchangeRate {
+  baseCurrency: string;
+  targetCurrency: string;
+  rate: number;
+  rateDate: string;
+  fetchedAt: string;
+  stale: boolean;
+}
+
+export interface SummaryRun {
+  guildId: string;
+  frequency: SummaryFrequency;
+  periodStart: string;
+  periodEnd: string;
+  channelId: string;
+  messageId: string | null;
+  sentAt: string;
 }
 
 export interface SkuSubscription {

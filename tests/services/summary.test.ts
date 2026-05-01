@@ -1,0 +1,167 @@
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { Database } from '../../src/services/database.js';
+import { getSummaryPeriod, SummaryService } from '../../src/services/summary.js';
+import type { EnabledSummarySettings, ExchangeRate, PriceHistoryEntry, Product } from '../../src/types.js';
+
+const rate: ExchangeRate = {
+  baseCurrency: 'USD',
+  targetCurrency: 'AUD',
+  rate: 1.5,
+  rateDate: '2026-04-30',
+  fetchedAt: '2026-04-30T00:00:00.000Z',
+  stale: false,
+};
+
+function createProduct(overrides: Partial<Product> = {}): Product {
+  return {
+    id: overrides.id ?? 'product-1',
+    sku: overrides.sku ?? 'SKU-1',
+    name: overrides.name ?? 'Test Drive 10TB',
+    type: overrides.type ?? 'HDD',
+    condition: overrides.condition ?? 'Recertified',
+    capacity_tb: overrides.capacity_tb ?? '10.00',
+    url: overrides.url ?? 'https://example.test/drive',
+    image_url: overrides.image_url ?? 'https://example.test/image.png',
+    available: overrides.available ?? true,
+    current_price_total: overrides.current_price_total ?? '100.00',
+    current_price_per_tb: overrides.current_price_per_tb ?? '10.00',
+    last_seen_at: overrides.last_seen_at ?? '2026-05-01T00:00:00.000Z',
+    first_seen_at: overrides.first_seen_at ?? '2026-01-01T00:00:00.000Z',
+    updated_at: overrides.updated_at ?? '2026-05-01T00:00:00.000Z',
+    source: overrides.source ?? 'east-digital',
+  };
+}
+
+function createHistory(entries: [string, string, string][]): PriceHistoryEntry[] {
+  return entries.map(([recordedAt, total, perTb]) => ({
+    recorded_at: recordedAt,
+    price_total: total,
+    price_per_tb: perTb,
+  }));
+}
+
+function createSettings(overrides: Partial<EnabledSummarySettings> = {}): EnabledSummarySettings {
+  return {
+    guildId: 'guild-1',
+    summaryEnabled: true,
+    frequency: 'daily',
+    channelId: 'summary-channel',
+    time: '09:00',
+    timezone: 'Etc/UTC',
+    ...overrides,
+  };
+}
+
+describe('SummaryService', () => {
+  let db: Database;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it('calculates daily, weekly, and monthly summary windows', () => {
+    const now = new Date('2026-05-15T09:00:00.000Z');
+
+    const daily = getSummaryPeriod('daily', 'Etc/UTC', now);
+    const weekly = getSummaryPeriod('weekly', 'Etc/UTC', now);
+    const monthly = getSummaryPeriod('monthly', 'Etc/UTC', now);
+
+    expect(daily.start.toISOString()).toBe('2026-05-14T09:00:00.000Z');
+    expect(weekly.start.toISOString()).toBe('2026-05-08T09:00:00.000Z');
+    expect(monthly.start.toISOString()).toBe('2026-04-01T00:00:00.000Z');
+    expect(monthly.end.toISOString()).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('ranks notable drops and increases only from the current summary window', async () => {
+    const products = [
+      createProduct({ id: 'drop', sku: 'DROP-SKU', current_price_total: '90.00', current_price_per_tb: '9.00' }),
+      createProduct({ id: 'spike', sku: 'SPIKE-SKU', current_price_total: '120.00', current_price_per_tb: '12.00' }),
+      createProduct({ id: 'old', sku: 'OLD-SKU', current_price_total: '80.00', current_price_per_tb: '8.00' }),
+    ];
+    const histories = new Map<string, PriceHistoryEntry[]>([
+      ['DROP-SKU', createHistory([
+        ['2026-04-30T00:00:00.000Z', '100.00', '10.00'],
+        ['2026-05-01T00:00:00.000Z', '90.00', '9.00'],
+      ])],
+      ['SPIKE-SKU', createHistory([
+        ['2026-04-30T00:00:00.000Z', '100.00', '10.00'],
+        ['2026-05-01T00:00:00.000Z', '120.00', '12.00'],
+      ])],
+      ['OLD-SKU', createHistory([
+        ['2026-04-29T00:00:00.000Z', '100.00', '10.00'],
+        ['2026-04-30T00:00:00.000Z', '80.00', '8.00'],
+        ['2026-05-01T00:00:00.000Z', '80.00', '8.00'],
+      ])],
+    ]);
+    const api = {
+      fetchProducts: vi.fn(async () => products),
+      fetchPriceHistory: vi.fn(async (_source: string, sku: string) => histories.get(sku) ?? []),
+    };
+    const currency = {
+      getUsdToAudRate: vi.fn(async () => rate),
+      convertUsdToAud: vi.fn((amount: number, exchangeRate: ExchangeRate | null) =>
+        exchangeRate ? amount * exchangeRate.rate : null
+      ),
+    };
+    const service = new SummaryService(db, api as never, currency as never);
+
+    const { embed } = await service.buildSummary(
+      createSettings(),
+      new Date('2026-05-01T00:00:00.000Z')
+    );
+    const fields = embed.toJSON().fields ?? [];
+
+    expect(fields.find(field => field.name === 'Price Drops')?.value).toContain('DROP-SKU');
+    expect(fields.find(field => field.name === 'Price Increases')?.value).toContain('SPIKE-SKU');
+    expect(fields.find(field => field.name === 'Price Drops')?.value).not.toContain('OLD-SKU');
+  });
+
+  it('falls back to top five normalized AUD per TB products when no notable changes exist', async () => {
+    const products = [
+      createProduct({
+        id: 'east-digital',
+        sku: 'ED-SKU',
+        source: 'east-digital',
+        current_price_total: '100.00',
+        current_price_per_tb: '10.00',
+      }),
+      createProduct({
+        id: 'local',
+        sku: 'AUS-SKU',
+        source: 'local-store',
+        current_price_total: '120.00',
+        current_price_per_tb: '12.00',
+      }),
+    ];
+    const history = createHistory([
+      ['2026-04-30T00:00:00.000Z', '100.00', '10.00'],
+      ['2026-05-01T00:00:00.000Z', '100.00', '10.00'],
+    ]);
+    const api = {
+      fetchProducts: vi.fn(async () => products),
+      fetchPriceHistory: vi.fn(async () => history),
+    };
+    const currency = {
+      getUsdToAudRate: vi.fn(async () => rate),
+      convertUsdToAud: vi.fn((amount: number, exchangeRate: ExchangeRate | null) =>
+        exchangeRate ? amount * exchangeRate.rate : null
+      ),
+    };
+    const service = new SummaryService(db, api as never, currency as never);
+
+    const { embed } = await service.buildSummary(
+      createSettings(),
+      new Date('2026-05-01T00:00:00.000Z')
+    );
+    const bestValue = (embed.toJSON().fields ?? []).find(field => field.name === 'Best Value Right Now')?.value ?? '';
+
+    expect(bestValue).toContain('AUS-SKU');
+    expect(bestValue).toContain('ED-SKU');
+    expect(bestValue.indexOf('AUS-SKU')).toBeLessThan(bestValue.indexOf('ED-SKU'));
+    expect(bestValue).toContain('~A$15.00/TB');
+  });
+});

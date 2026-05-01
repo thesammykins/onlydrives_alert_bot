@@ -10,16 +10,19 @@ A Discord bot that monitors drive prices from the OnlyDrives API and alerts user
 - **New Product Alerts**: Notified when new products appear
 - **Back in Stock Alerts**: Notified when products become available again
 - **Personal SKU Alerts**: Subscribe to specific SKUs and receive alerts via DM or in-channel
+- **Summary Digests**: Opt-in daily, weekly, or monthly server summaries with estimated AUD for East Digital USD listings
 - **Slash Commands**:
   - `/status` - Show tracked product counts and the most recent check time
   - `/deals` - List current best $/TB deals with filters and cached fallback
   - `/history <source-sku>` - Show price history for a product
   - `/config` - Configure bot settings at runtime (Admin only)
   - `/alert` - Manage personal SKU price alert subscriptions
+  - `/summary` - Enable, disable, preview, and inspect summary digests (Admin only)
 - **@Bot Mention Commands**: Subscribe to alerts by mentioning the bot
-- **Runtime Configuration**: Alert routing and monitoring settings can be configured via `/config`
+- **Runtime Configuration**: Alert routing and monitoring settings can be configured per server via `/config`
 - **Per-Alert Channels**: Route different alert types to different channels
 - **Alert Toggles**: Enable/disable specific alert types
+- **Per-Server Defaults**: New servers start with alerts and summaries disabled until an admin enables them
 - **Silent First Run**: No spam on first startup - products are synced silently
 
 ## Prerequisites
@@ -99,6 +102,7 @@ To get the IDs needed for configuration:
    DISCORD_CLIENT_ID=your_client_id_here
    DISCORD_GUILD_ID=your_guild_id_here
    ALERT_CHANNEL_ID=channel_id_for_alerts
+   SUMMARY_TEST_GUILD_ID=guild_id_allowed_to_run_summary_now
 
    # Optional (defaults shown)
    POLL_INTERVAL_MS=300000
@@ -176,7 +180,8 @@ Settings can be configured via `.env` file OR the `/config` command. Runtime set
 | `DISCORD_TOKEN` | Yes | - | Bot token from Discord Developer Portal |
 | `DISCORD_CLIENT_ID` | Yes | - | Application/Client ID from Discord Developer Portal |
 | `DISCORD_GUILD_ID` | No | - | Server ID (for dev; omit for global commands) |
-| `ALERT_CHANNEL_ID` | Yes | - | Default channel ID where alerts will be sent |
+| `ALERT_CHANNEL_ID` | Yes | - | Default channel ID used to migrate legacy single-server alert settings |
+| `SUMMARY_TEST_GUILD_ID` | No | - | Server ID allowed to run `/summary now`; leave unset to disable manual summary sends |
 | `POLL_INTERVAL_MS` | No | 300000 | How often to check prices (5 min default) |
 | `PRICE_DROP_THRESHOLD` | No | 0.05 | Percentage drop to trigger alert (5%) |
 | `PRICE_SPIKE_THRESHOLD` | No | 0.10 | Percentage increase to trigger alert (10%) |
@@ -220,11 +225,11 @@ Shows price history for a specific product using `source-sku` format, for exampl
 The `sku` option supports autocomplete based on current product data, with a short in-memory cache to avoid repeated API fetches.
 
 ### `/config` (Admin Only)
-Configure the bot at runtime. This command is restricted to administrators, and settings persist across restarts.
+Configure the bot at runtime. This command is restricted to administrators, settings are scoped to the current server, and settings persist across restarts.
 
 **Subcommands:**
 - `/config show` - Display current configuration
-- `/config channel <alert_type> [channel]` - Set channel for specific alert type (leave empty for default)
+- `/config channel <alert_type> [channel]` - Set or clear the channel for a specific alert type
 - `/config toggle <alert_type> <enabled>` - Enable/disable an alert type
 - `/config threshold <type> [percent]` - Set price change threshold (leave empty to reset)
 - `/config interval [seconds]` - Set polling interval (requires restart)
@@ -237,6 +242,31 @@ Configure the bot at runtime. This command is restricted to administrators, and 
 /config toggle price_spike false
 /config threshold price_drop 10
 /config cooldown 60
+```
+
+### `/summary` (Admin Only)
+Configure opt-in product summary digests for the current server. New servers have summaries disabled by default.
+
+**Subcommands:**
+- `/summary on <frequency> <time> <timezone> [channel]` - Enable summaries
+  - `frequency`: `daily`, `weekly`, or `monthly`
+  - `time`: 24-hour local time, for example `09:00`
+  - `timezone`: IANA timezone, for example `Australia/Melbourne`
+  - `channel`: optional text channel; defaults to the current channel
+- `/summary off` - Disable summaries for this server
+- `/summary status` - Show the current summary schedule
+- `/summary preview` - Preview the summary for the currently configured cadence
+- `/summary now` - Send the configured summary immediately in the command channel. This is restricted to `SUMMARY_TEST_GUILD_ID`.
+
+Weekly summaries send on Mondays. Monthly summaries send on the 1st. East Digital prices are treated as USD and displayed with an estimated AUD value using the cached USD/AUD reference rate from Frankfurter.
+
+**Examples:**
+```
+/summary on daily 09:00 Australia/Melbourne #drive-summaries
+/summary on weekly 09:00 Australia/Melbourne
+/summary preview
+/summary now
+/summary off
 ```
 
 ### `/alert`
