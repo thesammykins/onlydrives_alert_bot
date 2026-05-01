@@ -76,7 +76,7 @@ describe('SummaryService', () => {
     expect(monthly.end.toISOString()).toBe('2026-05-01T00:00:00.000Z');
   });
 
-  it('ranks notable drops and increases only from the current summary window', async () => {
+  it('shows best value now and better-value moves only from the current summary window', async () => {
     const products = [
       createProduct({ id: 'drop', sku: 'DROP-SKU', current_price_total: '90.00', current_price_per_tb: '9.00' }),
       createProduct({ id: 'spike', sku: 'SPIKE-SKU', current_price_total: '120.00', current_price_per_tb: '12.00' }),
@@ -114,10 +114,16 @@ describe('SummaryService', () => {
       new Date('2026-05-01T00:00:00.000Z')
     );
     const fields = embed.toJSON().fields ?? [];
+    const bestValue = fields.find(field => field.name === '🏆 Best $/TB Right Now (Top 5)')?.value ?? '';
+    const betterValue = fields.find(field => field.name === '📉 Better Value Than Yesterday')?.value ?? '';
 
-    expect(fields.find(field => field.name === 'Price Drops')?.value).toContain('DROP-SKU');
-    expect(fields.find(field => field.name === 'Price Increases')?.value).toContain('SPIKE-SKU');
-    expect(fields.find(field => field.name === 'Price Drops')?.value).not.toContain('OLD-SKU');
+    expect(embed.toJSON().title).toContain('💾');
+    expect(embed.toJSON().description).toContain('📦');
+    expect(bestValue).toContain('DROP-SKU');
+    expect(bestValue).toContain('SPIKE-SKU');
+    expect(betterValue).toContain('DROP-SKU');
+    expect(betterValue).not.toContain('SPIKE-SKU');
+    expect(betterValue).not.toContain('OLD-SKU');
   });
 
   it('formats compact trend rows without duplicated SKU noise', async () => {
@@ -155,12 +161,16 @@ describe('SummaryService', () => {
       createSettings(),
       new Date('2026-05-01T00:00:00.000Z')
     );
-    const dropField = (embed.toJSON().fields ?? []).find(field => field.name === 'Price Drops')?.value ?? '';
+    const betterValue = (embed.toJSON().fields ?? [])
+      .find(field => field.name === '📉 Better Value Than Yesterday')?.value ?? '';
 
-    expect(dropField).toContain('**1. Refurbished Seagate EXOS X18 18TB');
-    expect(dropField.match(new RegExp(sku, 'g'))?.length).toBe(1);
-    expect(dropField).toContain('A$90.00 • A$5.00/TB • ↓ 10.0%');
-    expect(dropField.length).toBeLessThanOrEqual(1024);
+    expect(betterValue).toContain('**1. [Refurbished Seagate EXOS X18 18TB');
+    expect(betterValue).toContain('](https://example.test/drive)');
+    expect(betterValue.match(new RegExp(sku, 'g'))?.length).toBe(1);
+    expect(betterValue).toContain('📉 A$5.00/TB');
+    expect(betterValue).toContain('save A$0.56/TB');
+    expect(betterValue).toContain('↘️');
+    expect(betterValue.length).toBeLessThanOrEqual(1024);
   });
 
   it('keeps all summary field values under Discord limits', async () => {
@@ -235,7 +245,8 @@ describe('SummaryService', () => {
       createSettings(),
       new Date('2026-05-01T00:00:00.000Z')
     );
-    const bestValue = (embed.toJSON().fields ?? []).find(field => field.name === 'Best Value Right Now')?.value ?? '';
+    const bestValue = (embed.toJSON().fields ?? [])
+      .find(field => field.name === '🏆 Best $/TB Right Now (Top 5)')?.value ?? '';
 
     expect(bestValue).toContain('AUS-SKU');
     expect(bestValue).toContain('ED-SKU');

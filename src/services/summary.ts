@@ -10,8 +10,6 @@ import { OnlyDrivesApi } from './api.js';
 import { CurrencyService } from './currency.js';
 import { Database } from './database.js';
 
-const SUMMARY_DROP_THRESHOLD = 0.05;
-const SUMMARY_SPIKE_THRESHOLD = 0.10;
 const EMBED_FIELD_VALUE_LIMIT = 1024;
 const EMBED_FIELD_SOFT_LIMIT = 1000;
 const PRODUCT_TITLE_LIMIT = 58;
@@ -30,8 +28,9 @@ interface ProductSummaryRow {
   currentPerTb: number;
   normalizedTotalAud: number | null;
   normalizedPerTbAud: number | null;
-  percentChange: number | null;
-  trendText: string;
+  previousPerTbAud: number | null;
+  perTbSavingsAud: number | null;
+  perTbPercentChange: number | null;
   isNew: boolean;
   isRestocked: boolean;
 }
@@ -59,34 +58,28 @@ export class SummaryService {
     const rate = await this.currency.getUsdToAudRate();
     const products = await this.fetchProducts();
     const rows = await this.buildRows(settings.guildId, products, period, rate);
-    const botSettings = this.db.getBotSettings(settings.guildId);
-    const dropThreshold = botSettings.priceDropThreshold ?? SUMMARY_DROP_THRESHOLD;
-    const spikeThreshold = botSettings.priceSpikeThreshold ?? SUMMARY_SPIKE_THRESHOLD;
-
-    const allDrops = rows
-      .filter(row => row.percentChange !== null && row.percentChange <= -dropThreshold)
-      .sort((a, b) => a.percentChange! - b.percentChange!);
-    const allSpikes = rows
-      .filter(row => row.percentChange !== null && row.percentChange >= spikeThreshold)
-      .sort((a, b) => b.percentChange! - a.percentChange!);
-    const allNewOrRestocked = rows
-      .filter(row => row.isNew || row.isRestocked)
-      .sort((a, b) => b.currentTotal - a.currentTotal);
-    const bestValue = rows
+    const availableRows = rows.filter(row => row.product.available);
+    const bestValue = availableRows
       .filter(row => row.product.available && row.normalizedPerTbAud !== null)
       .sort((a, b) => a.normalizedPerTbAud! - b.normalizedPerTbAud!)
       .slice(0, 5);
-    const drops = allDrops.slice(0, 5);
-    const spikes = allSpikes.slice(0, 3);
-    const newOrRestocked = allNewOrRestocked.slice(0, 5);
+    const betterValue = availableRows
+      .filter(row => row.perTbSavingsAud !== null && row.perTbSavingsAud > 0)
+      .sort((a, b) => {
+        const savingsDifference = b.perTbSavingsAud! - a.perTbSavingsAud!;
+        return savingsDifference === 0
+          ? a.normalizedPerTbAud! - b.normalizedPerTbAud!
+          : savingsDifference;
+      });
 
     const embed = new EmbedBuilder()
       .setColor(0x00a3ff)
-      .setTitle(`OnlyDrives ${formatSummaryFrequency(settings.frequency)} Summary`)
+      .setTitle(`💾 OnlyDrives ${formatSummaryFrequency(settings.frequency)} Value Digest`)
       .setDescription([
-        `${period.label} (${settings.timezone})`,
+        `🗓️ ${period.label}`,
+        `🌏 ${settings.timezone}`,
         formatRateLine(rate),
-        `Signals: ${allDrops.length} drops | ${allSpikes.length} increases | ${allNewOrRestocked.length} new/restocked | ${rows.length} tracked`,
+        `📦 ${availableRows.length}/${rows.length} available • 📉 ${betterValue.length} better-value moves`,
       ].join('\n'))
       .setTimestamp(now)
       .setFooter({ text: 'OnlyDrives Monitor' });
@@ -96,22 +89,17 @@ export class SummaryService {
       return { embed, period };
     }
 
-    if (drops.length > 0) {
-      embed.addFields({ name: 'Price Drops', value: formatRows(drops) });
-    }
+    embed.addFields({
+      name: '🏆 Best $/TB Right Now (Top 5)',
+      value: bestValue.length > 0
+        ? formatRows(bestValue, formatBestValueRow)
+        : 'No available products with comparable $/TB pricing.',
+    });
 
-    if (spikes.length > 0) {
-      embed.addFields({ name: 'Price Increases', value: formatRows(spikes) });
-    }
-
-    if (newOrRestocked.length > 0) {
-      embed.addFields({ name: 'New / Restocked', value: formatRows(newOrRestocked) });
-    }
-
-    if (drops.length === 0 && spikes.length === 0) {
+    if (betterValue.length > 0) {
       embed.addFields({
-        name: 'Best Value Right Now',
-        value: bestValue.length > 0 ? formatRows(bestValue) : 'No available products found.',
+        name: formatBetterValueFieldName(settings.frequency),
+        value: formatRows(betterValue, formatBetterValueRow),
       });
     }
 
@@ -151,7 +139,7 @@ export class SummaryService {
       const normalizedPerTbAud = isEastDigital
         ? this.currency.convertUsdToAud(currentPerTb, rate)
         : currentPerTb;
-      const percentChange = calculatePercentChange(product, history, period);
+      const valueChange = calculatePerTbValueChange(product, history, period, normalizedPerTbAud, rate);
       const firstSeenAt = new Date(product.first_seen_at).getTime();
       const isNew = firstSeenAt >= period.start.getTime() && firstSeenAt < period.end.getTime();
 
@@ -161,8 +149,9 @@ export class SummaryService {
         currentPerTb,
         normalizedTotalAud,
         normalizedPerTbAud,
-        percentChange,
-        trendText: formatTrend(percentChange, period.trendLabel),
+        previousPerTbAud: valueChange.previousPerTbAud,
+        perTbSavingsAud: valueChange.savingsAud,
+        perTbPercentChange: valueChange.percentChange,
         isNew,
         isRestocked: restockedIds.has(product.id),
       };
@@ -260,11 +249,21 @@ export function getZonedParts(date: Date, timezone: string): {
   };
 }
 
-function calculatePercentChange(
+function calculatePerTbValueChange(
   product: Product,
   history: PriceHistoryEntry[],
-  period: SummaryPeriod
-): number | null {
+  period: SummaryPeriod,
+  currentPerTbAud: number | null,
+  rate: ExchangeRate | null
+): {
+  previousPerTbAud: number | null;
+  savingsAud: number | null;
+  percentChange: number | null;
+} {
+  if (currentPerTbAud === null || currentPerTbAud <= 0) {
+    return { previousPerTbAud: null, savingsAud: null, percentChange: null };
+  }
+
   const sorted = history
     .map(entry => ({ ...entry, timestamp: new Date(entry.recorded_at).getTime() }))
     .filter(entry => !Number.isNaN(entry.timestamp))
@@ -273,24 +272,42 @@ function calculatePercentChange(
   const periodEnd = period.end.getTime();
   const startEntry = [...sorted].reverse().find(entry => entry.timestamp <= periodStart)
     ?? sorted.find(entry => entry.timestamp >= periodStart && entry.timestamp < periodEnd);
-  const endEntry = [...sorted].reverse().find(entry => entry.timestamp <= periodEnd);
 
   if (!startEntry) {
-    return null;
+    return { previousPerTbAud: null, savingsAud: null, percentChange: null };
   }
 
-  const startPrice = parsePrice(startEntry.price_total);
-  const endPrice = endEntry ? parsePrice(endEntry.price_total) : parsePrice(product.current_price_total);
+  const previousPerTb = parsePrice(startEntry.price_per_tb);
+  const previousPerTbAud = normalizePerTbAud(product, previousPerTb, rate);
 
-  if (startPrice <= 0 || endPrice <= 0) {
-    return null;
+  if (previousPerTbAud === null || previousPerTbAud <= 0) {
+    return { previousPerTbAud: null, savingsAud: null, percentChange: null };
   }
 
-  return (endPrice - startPrice) / startPrice;
+  return {
+    previousPerTbAud,
+    savingsAud: previousPerTbAud - currentPerTbAud,
+    percentChange: (currentPerTbAud - previousPerTbAud) / previousPerTbAud,
+  };
 }
 
-function formatRows(rows: ProductSummaryRow[]): string {
-  const lines = rows.map((row, index) => formatProductRow(row, index + 1));
+function normalizePerTbAud(product: Product, perTb: number, rate: ExchangeRate | null): number | null {
+  if (perTb <= 0) {
+    return null;
+  }
+
+  if (isEastDigitalProduct(product)) {
+    return rate ? perTb * rate.rate : null;
+  }
+
+  return perTb;
+}
+
+function formatRows(
+  rows: ProductSummaryRow[],
+  rowFormatter: (row: ProductSummaryRow, index: number) => string
+): string {
+  const lines = rows.map((row, index) => rowFormatter(row, index + 1));
   const selected: string[] = [];
   let value = '';
 
@@ -322,9 +339,38 @@ function formatRows(rows: ProductSummaryRow[]): string {
   return truncateText(selected.join('\n\n'), EMBED_FIELD_VALUE_LIMIT);
 }
 
-function formatProductRow(row: ProductSummaryRow, index: number): string {
+function formatBestValueRow(row: ProductSummaryRow, index: number): string {
   const product = row.product;
-  const title = formatProductTitle(product);
+
+  return [
+    `**${index}. ${formatProductLink(product)}**`,
+    formatProductMeta(row),
+    `🏷️ ${formatCurrentPerTb(row)} • ${formatCurrentTotal(row)}${formatCompactTrend(row)}`,
+  ].join('\n');
+}
+
+function formatBetterValueRow(row: ProductSummaryRow, index: number): string {
+  const product = row.product;
+  const previousPerTb = row.previousPerTbAud === null
+    ? 'previous n/a'
+    : `was A$${row.previousPerTbAud.toFixed(2)}/TB`;
+  const savings = row.perTbSavingsAud === null
+    ? 'saving n/a'
+    : `save A$${row.perTbSavingsAud.toFixed(2)}/TB`;
+
+  return [
+    `**${index}. ${formatProductLink(product)}**`,
+    formatProductMeta(row),
+    `📉 ${formatCurrentPerTb(row)} • ${previousPerTb} • ${savings}${formatCompactTrend(row)}`,
+  ].join('\n');
+}
+
+function formatProductLink(product: Product): string {
+  return `[${formatProductTitle(product)}](${escapeMarkdownUrl(product.url)})`;
+}
+
+function formatProductMeta(row: ProductSummaryRow): string {
+  const product = row.product;
   const statusParts = [
     `\`${escapeInlineCode(truncateMiddle(product.sku, PRODUCT_SKU_LIMIT))}\``,
     formatCapacity(product.capacity_tb),
@@ -335,11 +381,7 @@ function formatProductRow(row: ProductSummaryRow, index: number): string {
     row.isRestocked ? 'restocked' : null,
   ].filter((part): part is string => Boolean(part));
 
-  return [
-    `**${index}. ${title}**`,
-    statusParts.join(' • '),
-    `${formatPrice(row)} • ${row.trendText}`,
-  ].join('\n');
+  return statusParts.join(' • ');
 }
 
 function formatProductTitle(product: Product): string {
@@ -402,39 +444,62 @@ function dedupeCapacityText(value: string): string {
     .trim();
 }
 
-function formatPrice(row: ProductSummaryRow): string {
+function formatCurrentPerTb(row: ProductSummaryRow): string {
   if (isEastDigitalProduct(row.product)) {
-    if (row.normalizedTotalAud === null || row.normalizedPerTbAud === null) {
-      return `US$${row.currentTotal.toFixed(2)} • US$${row.currentPerTb.toFixed(2)}/TB • AUD n/a`;
+    if (row.normalizedPerTbAud === null) {
+      return `US$${row.currentPerTb.toFixed(2)}/TB`;
     }
 
-    return `US$${row.currentTotal.toFixed(2)} (~A$${row.normalizedTotalAud.toFixed(2)}) • ` +
-      `US$${row.currentPerTb.toFixed(2)}/TB (~A$${row.normalizedPerTbAud.toFixed(2)}/TB)`;
+    return `~A$${row.normalizedPerTbAud.toFixed(2)}/TB (US$${row.currentPerTb.toFixed(2)})`;
   }
 
-  return `A$${row.currentTotal.toFixed(2)} • A$${row.currentPerTb.toFixed(2)}/TB`;
+  return `A$${row.currentPerTb.toFixed(2)}/TB`;
+}
+
+function formatCurrentTotal(row: ProductSummaryRow): string {
+  if (isEastDigitalProduct(row.product)) {
+    if (row.normalizedTotalAud === null) {
+      return `US$${row.currentTotal.toFixed(2)} total`;
+    }
+
+    return `~A$${row.normalizedTotalAud.toFixed(2)} total (US$${row.currentTotal.toFixed(2)})`;
+  }
+
+  return `A$${row.currentTotal.toFixed(2)} total`;
 }
 
 function formatRateLine(rate: ExchangeRate | null): string {
   if (!rate) {
-    return 'FX: USD -> AUD unavailable';
+    return '💱 USD -> AUD unavailable';
   }
 
   const staleText = rate.stale ? ', cached fallback' : '';
-  return `FX: USD -> AUD ${rate.rate.toFixed(4)} (${rate.rateDate}${staleText})`;
+  return `💱 USD -> AUD ${rate.rate.toFixed(4)} (${rate.rateDate}${staleText})`;
 }
 
-function formatTrend(percentChange: number | null, trendLabel: string): string {
-  if (percentChange === null) {
-    return `${trendLabel} n/a`;
+function formatCompactTrend(row: ProductSummaryRow): string {
+  if (row.perTbPercentChange === null) {
+    return '';
   }
 
-  if (Math.abs(percentChange) < 0.001) {
-    return `${trendLabel} flat`;
+  if (Math.abs(row.perTbPercentChange) < 0.001) {
+    return ' • flat';
   }
 
-  const arrow = percentChange > 0 ? '↑' : '↓';
-  return `${arrow} ${Math.abs(percentChange * 100).toFixed(1)}%`;
+  const arrow = row.perTbPercentChange > 0 ? '↗️' : '↘️';
+  return ` • ${arrow} ${Math.abs(row.perTbPercentChange * 100).toFixed(1)}%`;
+}
+
+function formatBetterValueFieldName(frequency: SummaryFrequency): string {
+  if (frequency === 'weekly') {
+    return '📉 Better Value This Week';
+  }
+
+  if (frequency === 'monthly') {
+    return '📉 Better Value This Month';
+  }
+
+  return '📉 Better Value Than Yesterday';
 }
 
 function formatCapacity(capacityTb: string): string {
@@ -495,6 +560,10 @@ function escapeInlineCode(value: string): string {
 
 function escapeMarkdownText(value: string): string {
   return value.replace(/[*_~`]/g, '');
+}
+
+function escapeMarkdownUrl(value: string): string {
+  return value.replace(/\)/g, '%29').replace(/\s/g, '%20');
 }
 
 function formatZonedDateTime(date: Date, timezone: string): string {
