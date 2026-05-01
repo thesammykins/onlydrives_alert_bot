@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.4.0...onlydrives-alert-bot-v1.4.1) (2026-05-01)
+
+
+### Bug Fixes
+
+* automatically sync guild slash commands on startup and guild install
+* keep `/summary now` visible only in the configured test guild
+* compact summary digest rows and enforce Discord field limits
+
 ## [1.4.0](https://github.com/thesammykins/onlydrives_alert_bot/compare/onlydrives-alert-bot-v1.3.1...onlydrives-alert-bot-v1.4.0) (2026-05-01)
 
 
